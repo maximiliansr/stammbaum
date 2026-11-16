@@ -11,7 +11,8 @@ Alle Familienmitglieder öffnen ihn im Browser (Handy, Tablet, PC) mit einem gem
 - **Stammbaum** mit Generationen-Spalten, Zoom, Suche, Auf-/Zuklappen, Druckansicht
 - **Mehrere Stämme**: Herkunftsfamilien angeheirateter Partner lassen sich als eigener Baum anzeigen
   (Eltern → Geschwister → gemeinsame Nachkommen), Umschalten per Auswahl oder Knopf am Partner;
-  Eltern der Herkunftsfamilie können weitere Partner und Kinder haben (Halbgeschwister)
+  Eltern der Herkunftsfamilie können weitere Partner und Kinder haben (Halbgeschwister);
+  jede Person der Herkunftsfamilie kann Eltern und Geschwister bekommen (Großeltern, Tanten, Onkel …)
 - **Personenseiten** mit Eltern, Partnern, Geschwistern, Kindern, Foto und eigenen Feldern (Beruf, E-Mail …)
 - **„Wer bist du?“** – jede Person zeigt dann „Für dich: Cousine 2. Grades“, „Großonkel“, „Schwägerin“ …
 - **Verwandtschaftsrechner** mit gezeichnetem Weg über die gemeinsamen Vorfahren

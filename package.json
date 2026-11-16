@@ -1,6 +1,6 @@
 {
   "name": "familien-stammbaum",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "private": true,
   "description": "Familien-Stammbaum als kleiner Webdienst – ohne externe Abhängigkeiten",
   "main": "server.js",

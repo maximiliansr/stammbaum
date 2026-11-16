@@ -198,9 +198,9 @@ function nextCode(parent, kind) {
   return '';
 }
 
-const ROLES = ['parent', 'sibling', 'child', 'partnerOfParent'];
+const ROLES = ['parent', 'sibling', 'child', 'partnerOfParent', 'relative'];
 const normRole = (r) => (ROLES.includes(r) ? r : 'parent');
-const ROLE_TXT = { parent: 'Elternteil', sibling: 'Geschwister', child: 'Kind aus anderer Beziehung', partnerOfParent: 'Partner/in eines Elternteils' };
+const ROLE_TXT = { parent: 'Elternteil', sibling: 'Geschwister', child: 'Kind aus anderer Beziehung', partnerOfParent: 'Partner/in eines Elternteils', relative: 'Angehörige/r' };
 
 // Eltern eines Geschwisters in der Herkunftsfamilie prüfen: [] = beide Eltern (volle Geschwister)
 function originParentIds(partnerId, ids) {
@@ -213,7 +213,7 @@ function originParentIds(partnerId, ids) {
   return ok;
 }
 
-function createPerson({ kind, anchorId, fields, otherParentId, role, parentIds }, who) {
+function createPerson({ kind, anchorId, fields, otherParentId, role, parentIds, relation }, who) {
   if (kind === 'root') {
     // Neue Stammperson (oberste Generation einer Linie)
     const p = Object.assign(emptyPerson(), fields, { id: newId(), kind: 'blood', order: store.doc.persons.filter(x => x.kind === 'blood' && !x.parentId).length + 1, updatedAt: new Date().toISOString() });
@@ -235,6 +235,21 @@ function createPerson({ kind, anchorId, fields, otherParentId, role, parentIds }
       p.partnerOfId = anchor.id;
     }
     if (p.role === 'sibling') p.parentIds = originParentIds(partner.id, parentIds);
+    if (p.role === 'relative') {
+      // Weitere Angehörige: Elternteil oder Geschwister einer Person der Herkunftsfamilie
+      if (anchor.kind !== 'origin' || !['parent', 'partnerOfParent', 'relative'].includes(anchor.role)) throw new HttpError(400, 'Nur bei Eltern oder weiteren Angehörigen der Herkunftsfamilie möglich');
+      if (relation === 'parent') {
+        const cur = (anchor.parentIds || []).filter(id => store.byId.has(id));
+        if (cur.length >= 2) throw new HttpError(400, 'Es sind bereits zwei Eltern erfasst');
+        p.order = 0;
+        anchor.parentIds = [...cur, p.id];
+        // Geschwister ohne eigene Eltern bekommen dieselben Eltern
+        store.doc.persons.forEach(x => { if (x.siblingOfId === anchor.id && !(x.parentIds || []).length) { x.parentIds = [...anchor.parentIds]; } });
+      } else if (relation === 'sibling') {
+        const cur = (anchor.parentIds || []).filter(id => store.byId.has(id));
+        if (cur.length) p.parentIds = [...cur]; else p.siblingOfId = anchor.siblingOfId || anchor.id;
+      } else throw new HttpError(400, 'Unbekannte Beziehung');
+    }
     p.order = store.doc.persons.filter(x => x.originOf === partner.id).length + 1;
     p.updatedAt = new Date().toISOString();
     store.doc.persons.push(p); store.save();
@@ -313,6 +328,7 @@ function deletePerson(id, who) {
   const kids = store.doc.persons.filter(x => x.parentId === id);
   const partners = store.doc.persons.filter(x => x.partnerOf === id);
   const origins = store.doc.persons.filter(x => x.originOf === id || x.partnerOfId === id);
+  store.doc.persons.forEach(c => { if (c.siblingOfId === id) c.siblingOfId = null; });
   if (kids.length || partners.length || origins.length) throw new HttpError(409, `Erst Kinder (${kids.length}), Partner (${partners.length}) und Angehörige der Herkunftsfamilie (${origins.length}) entfernen oder umhängen.`);
   store.doc.persons.forEach(c => { if (Array.isArray(c.parentIds) && c.parentIds.includes(id)) c.parentIds = c.parentIds.filter(x => x !== id); });
   store.doc.persons = store.doc.persons.filter(x => x.id !== id);
@@ -393,10 +409,11 @@ route('POST', '/api/vorschlaege', 'family', (ctx) => {
     otherParentId: type === 'child' ? clean(b.otherParentId, 40) || null : null, hasPhoto: false,
     role: type === 'origin' ? normRole(b.role) : undefined,
     parentIds: type === 'origin' && Array.isArray(b.parentIds) ? b.parentIds.map(x => clean(x, 40)).slice(0, 2) : undefined,
+    relation: type === 'origin' && ['parent', 'sibling'].includes(b.relation) ? b.relation : undefined,
     structure: type === 'edit' && b.structure ? { parentId: clean(b.structure.parentId, 40) || null, otherParentId: clean(b.structure.otherParentId, 40) || null,
       parentIds: Array.isArray(b.structure.parentIds) ? b.structure.parentIds.map(x => clean(x, 40)).slice(0, 2) : undefined } : undefined,
   };
-  if (type === 'origin' && target.kind !== 'partner' && !(target.kind === 'origin' && target.role === 'parent')) throw new HttpError(400, 'Herkunftsfamilie nur bei angeheirateten Partnern bzw. deren Eltern');
+  if (type === 'origin' && target.kind !== 'partner' && !(target.kind === 'origin' && ['parent', 'partnerOfParent', 'relative'].includes(target.role))) throw new HttpError(400, 'Herkunftsfamilie nur bei angeheirateten Partnern bzw. deren Angehörigen');
   if (type === 'source') {
     const f = decodeFile(b.file);
     s.source = sanitizeSource(b.source || {}); s.source.mime = f.mime;
@@ -440,7 +457,7 @@ route('POST', '/api/vorschlaege/([a-zA-Z0-9_-]+)/(annehmen|ablehnen)', 'admin', 
       updatePerson(s.targetId, fields, who, extra);
     }
     else if (s.type === 'child' || s.type === 'partner' || s.type === 'origin') {
-      personId = createPerson({ kind: s.type === 'child' ? 'child' : s.type, anchorId: s.targetId, fields, otherParentId: s.otherParentId, role: s.role, parentIds: s.parentIds }, who).id;
+      personId = createPerson({ kind: s.type === 'child' ? 'child' : s.type, anchorId: s.targetId, fields, otherParentId: s.otherParentId, role: s.role, parentIds: s.parentIds, relation: s.relation }, who).id;
     } else if (s.type === 'source') {
       const src = Object.assign(sanitizeSource(Object.assign({}, s.source, (ctx.body || {}).source || {})), {
         id: 'q' + Date.now().toString(36) + crypto.randomBytes(2).toString('hex'), mime: s.source.mime,
@@ -476,7 +493,7 @@ route('POST', '/api/personen', 'admin', (ctx) => {
   const r = sanitizeFields(b.fields || {});
   if (r.errors.length) throw new HttpError(400, r.errors.join(' · '));
   const kind = ['partner', 'origin', 'root'].includes(b.kind) ? b.kind : 'child';
-  const p = createPerson({ kind, anchorId: b.anchorId, fields: r.fields, otherParentId: b.otherParentId, role: b.role, parentIds: b.parentIds }, 'Admin');
+  const p = createPerson({ kind, anchorId: b.anchorId, fields: r.fields, otherParentId: b.otherParentId, role: b.role, parentIds: b.parentIds, relation: b.relation }, 'Admin');
   return { person: p };
 });
 
