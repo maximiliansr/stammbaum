@@ -1,0 +1,41 @@
+# Variante A (empfohlen, öffentlich erreichbar): Stammbaum + Caddy mit automatischem HTTPS
+#   docker compose up -d
+# Variante B (Heimnetz / vorhandener Reverse-Proxy): nur den Dienst „stammbaum“ starten
+#   docker compose up -d stammbaum   und unten „ports“ einkommentieren
+
+services:
+  stammbaum:
+    # Fertiges Image von GitHub …
+    image: ghcr.io/maximiliansr/stammbaum:latest
+    # … oder selbst bauen: die nächste Zeile einkommentieren
+    # build: .
+    container_name: stammbaum
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      TRUST_PROXY: "true"
+      COOKIE_SECURE: "true"
+    volumes:
+      - ./data:/data
+    # ports:
+    #   - "3000:3000"
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: stammbaum-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - stammbaum
+
+volumes:
+  caddy_data:
+  caddy_config:

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs><clipPath id="c"><rect width="512" height="512" rx="96"/></clipPath></defs><g clip-path="url(#c)"><rect width="512" height="512" fill="#24546B"/>
+  <g fill="#B4352A"><rect x="0" y="0" width="512" height="40" rx="0" fill="#fff"/>
+    <rect x="0" y="0" width="40" height="20"/><rect x="80" y="0" width="40" height="20"/><rect x="160" y="0" width="40" height="20"/><rect x="240" y="0" width="40" height="20"/><rect x="320" y="0" width="40" height="20"/><rect x="400" y="0" width="40" height="20"/><rect x="480" y="0" width="32" height="20"/>
+    <rect x="40" y="20" width="40" height="20"/><rect x="120" y="20" width="40" height="20"/><rect x="200" y="20" width="40" height="20"/><rect x="280" y="20" width="40" height="20"/><rect x="360" y="20" width="40" height="20"/><rect x="440" y="20" width="40" height="20"/></g>
+  <g stroke="#fff" stroke-width="18" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M176 196 V280 H256 M176 280 V376 H256 M176 280 H256"/>
+  </g>
+  <g fill="#fff"><circle cx="176" cy="180" r="44"/><circle cx="300" cy="280" r="40"/><circle cx="300" cy="376" r="40"/></g>
+</g></svg>

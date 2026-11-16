@@ -1,0 +1,16 @@
+# Laufzeitdaten (enthalten echte Familiendaten!) – niemals einchecken
+data/*
+!data/.gitkeep
+*.json.bak
+backups/
+
+# Geheimnisse
+.env
+
+# Echte Familien-Exporte nicht versehentlich hochladen
+*-daten.json
+stammbaum-*.json
+!seed/beispiel.json
+
+node_modules/
+.DS_Store
