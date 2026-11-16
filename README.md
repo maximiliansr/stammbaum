@@ -155,6 +155,14 @@ seed/beispiel.json Erfundene Beispielfamilie
 scripts/           Beispieldaten erzeugen, alte Exporte umwandeln
 ```
 
+## Versionen
+
+Unten auf jeder Seite steht die laufende Version, z. B. „Stammbaum v1.1.0 · e2ec756“ – die Nummer aus
+`package.json` und der Commit, aus dem das Image gebaut wurde (verlinkt auf GitHub). Auch `/healthz` liefert beides.
+
+Neue Version veröffentlichen: `version` in `package.json` erhöhen, committen und einen Tag setzen
+(`git tag v1.2.0 && git push --tags`). Dann gibt es zusätzlich zum Image `:latest` auch `:1.2.0`.
+
 ## Lizenz
 
 MIT – siehe [LICENSE](LICENSE). Schriften: Literata und IBM Plex Sans (SIL Open Font License).

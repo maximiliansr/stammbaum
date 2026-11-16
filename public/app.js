@@ -15,7 +15,7 @@ const MON3 = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'O
 const S = {
   role: null, title: '', persons: [], byId: new Map(), kids: new Map(), partners: new Map(), gen: new Map(),
   roots: [], me: LS.get('stb.me', null), icsPath: null, openSugg: 0, updatedAt: '',
-  origins: new Map(), sources: [], sourceKinds: [],
+  origins: new Map(), sources: [], sourceKinds: [], version: null,
 };
 const isAdmin = () => S.role === 'admin';
 
@@ -340,7 +340,7 @@ function shell() {
       <span>${me ? 'Du: ' + esc(me.firstName.split(' ')[0]) : 'Wer bist du?'}${isAdmin() ? ' <span class="role-tag">Admin</span>' : ''}</span>
     </button>
   </div></header>
-  <main id="main"></main>`;
+  <main id="main"></main>${footerHtml()}`;
   $('#meBtn').onclick = openMeDialog;
 }
 function setActiveNav() {
@@ -385,6 +385,14 @@ async function refresh() {
   shell(); router();
 }
 
+// Versionsanzeige (unten auf jeder Seite)
+function footerHtml() {
+  const v = S.version; if (!v || !v.version) return '';
+  const commit = v.commit ? (v.repo ? ` · <a href="${esc(v.repo)}/commit/${esc(v.commit)}" target="_blank" rel="noopener">${esc(v.commit)}</a>` : ` · ${esc(v.commit)}`) : '';
+  const name = v.repo ? `<a href="${esc(v.repo)}" target="_blank" rel="noopener">Stammbaum</a>` : 'Stammbaum';
+  return `<footer class="site-foot">${name} v${esc(v.version)}${commit}</footer>`;
+}
+
 // ================= Anmeldung =================
 function renderLogin(msg = '') {
   $('#app').innerHTML = `
@@ -398,7 +406,7 @@ function renderLogin(msg = '') {
       <button class="btn primary" style="width:100%;justify-content:center;margin-top:12px">Anmelden</button>
     </form>
     <p class="hint" style="margin-top:14px">Passwort vergessen? Bitte bei der Person nachfragen, die den Stammbaum pflegt.</p>
-  </div></div>`;
+  </div></div>${footerHtml()}`;
   $('#loginForm').onsubmit = async (e) => {
     e.preventDefault();
     const btn = e.target.querySelector('button'); btn.disabled = true;
@@ -1586,6 +1594,7 @@ async function start() {
   try {
     const me = await api('GET', '/api/me');
     S.title = me.title || 'Stammbaum'; S.role = me.role; S.icsPath = me.icsPath;
+    S.version = { version: me.version, commit: me.commit, repo: me.repo };
     if (!S.role) return renderLogin();
     await loadData();
     shell(); router();

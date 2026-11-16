@@ -1,4 +1,8 @@
 FROM node:22-alpine
+# Vom GitHub-Workflow gesetzt, für die Versionsanzeige
+ARG GIT_SHA=""
+ARG REPO_URL=""
+ENV GIT_SHA=$GIT_SHA REPO_URL=$REPO_URL
 ENV NODE_ENV=production PORT=3000 DATA_DIR=/data
 WORKDIR /app
 COPY package.json server.js ./

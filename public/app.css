@@ -449,3 +449,10 @@ dialog.wide { width: min(1100px, calc(100vw - 24px)); }
   .iv-grid { grid-template-columns: minmax(0, 1fr); }
   .iv-actions .btn.primary { width: 100%; justify-content: center; order: 5; }
 }
+
+/* ---------- Versionsanzeige ---------- */
+.site-foot { text-align: center; font-size: 12px; color: var(--ink-3); padding: 18px 16px 28px; font-variant-numeric: tabular-nums; }
+.site-foot a { color: var(--ink-3); }
+body:has(.tree-page) .site-foot { display: none; }
+.login + .site-foot { margin-top: -60px; }
+@media print { .site-foot { display: none; } }

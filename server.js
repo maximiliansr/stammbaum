@@ -19,6 +19,9 @@ const FAMILY_SEES_ADDRESSES = !/^(0|false|nein|no)$/i.test(process.env.FAMILY_SE
 const TRUST_PROXY = /^(1|true|ja|yes)$/i.test(process.env.TRUST_PROXY || '');
 const COOKIE_SECURE = /^(1|true|ja|yes)$/i.test(process.env.COOKIE_SECURE || '');
 const SITE_TITLE = process.env.SITE_TITLE || '';
+const APP_VERSION = require('./package.json').version;
+const GIT_SHA = (process.env.GIT_SHA || '').slice(0, 7);
+const REPO_URL = (process.env.REPO_URL || '').replace(/\/$/, '');
 
 if (!FAMILY_PASSWORD || !ADMIN_PASSWORD) {
   console.error('FEHLER: Bitte FAMILY_PASSWORD und ADMIN_PASSWORD setzen (siehe .env.example).');
@@ -113,6 +116,9 @@ function readBody(req, limit) {
   return new Promise((resolve, reject) => {
     if (req.method === 'GET' || req.method === 'HEAD') return resolve(null);
     const ct = req.headers['content-type'] || '';
+    // Anfragen ohne Inhalt (z. B. DELETE) brauchen keinen JSON-Typ
+    const empty = !req.headers['transfer-encoding'] && Number(req.headers['content-length'] || 0) === 0;
+    if (empty) { req.resume(); return resolve({}); }
     if (!ct.startsWith('application/json')) return reject(new HttpError(415, 'Nur JSON wird angenommen'));
     let size = 0; const chunks = [];
     req.on('data', c => {
@@ -304,6 +310,7 @@ route('GET', '/api/me', null, (ctx) => ({
   role: ctx.role, title: SITE_TITLE || store.doc.title,
   icsPath: ctx.role ? `/kalender/${ICS_TOKEN}/geburtstage.ics` : null,
   familySeesAddresses: FAMILY_SEES_ADDRESSES,
+  version: APP_VERSION, commit: GIT_SHA, repo: REPO_URL,
 }));
 
 route('POST', '/api/login', null, (ctx) => {
@@ -571,7 +578,7 @@ route('POST', '/api/import', 'admin', (ctx) => {
   return { ok: true, count: r.persons.length, notes: r.notes };
 });
 
-route('GET', '/healthz', null, () => ({ ok: true }));
+route('GET', '/healthz', null, () => ({ ok: true, version: APP_VERSION, commit: GIT_SHA || undefined }));
 
 // Kalender-Abo (Token statt Login, damit Handy-Kalender ihn abrufen können)
 route('GET', '/kalender/([A-Za-z0-9_-]+)/geburtstage\\.ics', null, (ctx, m) => {
@@ -634,6 +641,6 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`Stammbaum läuft auf Port ${PORT} · ${store.doc.persons.length} Personen · Daten in ${DATA_DIR}`);
+  console.log(`Stammbaum v${APP_VERSION}${GIT_SHA ? ' (' + GIT_SHA + ')' : ''} läuft auf Port ${PORT} · ${store.doc.persons.length} Personen · Daten in ${DATA_DIR}`);
 });
 for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, () => server.close(() => process.exit(0)));
