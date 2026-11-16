@@ -456,3 +456,15 @@ dialog.wide { width: min(1100px, calc(100vw - 24px)); }
 body:has(.tree-page) .site-foot { display: none; }
 .login + .site-foot { margin-top: -60px; }
 @media print { .site-foot { display: none; } }
+
+/* ---------- Stämme ---------- */
+.stem-sel { width: auto; max-width: 320px; font-weight: 500; }
+.stem-note { padding: 8px 20px; background: var(--weser-soft); color: var(--ink-2); font-size: 14px; border-bottom: 1px solid var(--line); }
+.stem-note b { color: var(--weser); }
+.t-ptn-in { flex: 1; min-width: 0; }
+.t-stem { display: block; margin: -4px 0 6px 12px; padding: 1px 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); color: var(--weser); font-size: 11px; font-weight: 600; cursor: pointer; }
+.t-ptn .t-stem { margin-left: 4px; }
+.t-stem:hover { border-color: var(--weser); background: var(--weser-soft); }
+.t-p.placeholder { cursor: default; border: 0; }
+.t-p.placeholder b { color: var(--ink-3); font-style: italic; font-weight: 400; }
+@media (max-width: 720px) { .stem-sel { max-width: 100%; width: 100%; } }

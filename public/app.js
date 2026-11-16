@@ -347,7 +347,7 @@ function setActiveNav() {
   const h = location.hash || '#/';
   $$('.nav a').forEach(a => {
     const href = a.getAttribute('href');
-    const on = href === '#/' ? (h === '#/' || h === '#' || h === '') : h.startsWith(href);
+    const on = href === '#/' ? (h === '#/' || h === '#' || h === '') : h.startsWith(href) || (href === '#/baum' && h.startsWith('#/stamm'));
     if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
   });
 }
@@ -364,6 +364,7 @@ async function router() {
   document.title = S.title;
   if (v === '') return viewHome(main);
   if (v === 'baum') return viewTree(main, parts[1]);
+  if (v === 'stamm') return viewTree(main, parts[2], parts[1]);
   if (v === 'p') return viewPersonPage(main, parts[1]);
   if (v === 'personen') return viewList(main);
   if (v === 'geburtstage') return viewBirthdays(main);
@@ -529,24 +530,66 @@ function viewHome(main) {
 const GEN_NAMES = ['Stammeltern', 'Kinder', 'Enkel', 'Urenkel', 'Ururenkel', '3× Urenkel', '4× Urenkel', '5× Urenkel'];
 let treeZoom = LS.get('stb.zoom', matchMedia('(max-width: 720px)').matches ? 0.8 : 1);
 
-function treeNodeHtml(p, collapsed) {
-  const kids = S.kids.get(p.id) || [];
-  const parts = S.partners.get(p.id) || [];
-  const isC = collapsed.has(p.id) && kids.length;
-  const pBtn = (x) => `<button class="t-p${x.death ? ' gone' : ''}${x.id === S.me ? ' is-me' : ''}" data-id="${esc(x.id)}"><b>${esc(x.firstName || '?')} <span class="ln">${esc(x.lastName || '')}</span></b><small>${esc([lifespan(x), x.birthName ? 'geb. ' + x.birthName : ''].filter(Boolean).join(' · ') || ' ')}</small></button>`;
-  return `<div class="t-node${kids.length ? ' has-kids' : ''}${isC ? ' collapsed' : ''}" data-node="${esc(p.id)}">
-    <div class="t-unit">${pBtn(p)}${parts.map(s => `<div class="t-ptn${s.divorced ? ' div' : ''}"><span class="sym" title="${s.divorced ? 'geschieden' : 'verheiratet'}">${s.divorced ? '⚮' : '⚭'}</span>${pBtn(s)}</div>`).join('')}
-    ${kids.length ? `<button class="t-tog" data-tog="${esc(p.id)}" aria-expanded="${!isC}" title="${isC ? 'Kinder zeigen' : 'Kinder ausblenden'}">${kids.length}</button>` : ''}</div>
-    ${kids.length ? `<div class="t-kids">${kids.map(k => treeNodeHtml(k, collapsed)).join('')}</div>` : ''}
+// Baumdarstellung über „Einheiten“: Person + Partner + Kinder-Einheiten
+function unitOf(p) { return { main: p, partners: S.partners.get(p.id) || [], kids: (S.kids.get(p.id) || []).map(unitOf) }; }
+const leafUnit = (p) => ({ main: p, partners: [], kids: [] });
+
+// Stämme = Herkunftsfamilien angeheirateter Partner
+function stemList() {
+  return S.persons.filter(p => p.kind === 'partner' && (S.origins.get(p.id) || []).some(o => o.role !== 'child'));
+}
+function stemName(P) {
+  const par = originParents(P.id);
+  const name = (par.find(x => x.sex === 'm') || par[0] || {}).lastName || P.birthName || P.lastName || P.firstName;
+  return `Familie ${name}`;
+}
+function stemUnit(partnerId) {
+  const P = S.byId.get(partnerId); if (!P) return null;
+  const spouse = S.byId.get(P.partnerOf);
+  const parents = originParents(P.id);
+  const sibs = (S.origins.get(P.id) || []).filter(o => o.role === 'sibling');
+  const joint = spouse ? (S.kids.get(spouse.id) || []).filter(k => k.otherParentId === P.id).map(unitOf) : [];
+  const pUnit = { main: P, partners: spouse ? [spouse] : [], kids: [...joint, ...originKids(P.id).map(leafUnit)] };
+  const kids = [pUnit, ...sibs.map(leafUnit)].sort((x, y) => sortKey(x.main.birth) - sortKey(y.main.birth));
+  if (!parents.length) return { placeholder: `Eltern von ${P.firstName.split(' ')[0]}`, id: 'ph-' + P.id, partners: [], kids };
+  return { main: parents[0], partners: parents.slice(1), kids };
+}
+function unitDepth(u) { return 1 + Math.max(0, ...(u.kids || []).map(unitDepth)); }
+
+function treeNodeHtml(u, ctx, depth = 0) {
+  const key = u.main ? u.main.id : u.id;
+  const kids = u.kids || [];
+  const isC = ctx.collapsed.has(key) && kids.length;
+  const pBtn = (x) => `<button class="t-p${x.death ? ' gone' : ''}${x.id === S.me ? ' is-me' : ''}" data-id="${esc(x.id)}"><b>${esc(x.firstName || '?')} <span class="ln">${esc(x.lastName || '')}</span></b><small>${esc([lifespan(x), x.birthName ? 'geb. ' + x.birthName : '', x.kind === 'origin' && x.role === 'child' ? 'aus anderer Beziehung' : ''].filter(Boolean).join(' · ') || ' ')}</small></button>`;
+  const stemBtn = (x) => x.kind === 'partner' && x.id !== ctx.stemId && (S.origins.get(x.id) || []).some(o => o.role !== 'child')
+    ? `<button class="t-stem" data-stem="${esc(x.id)}" title="Herkunftsfamilie von ${esc(x.firstName)} als Stamm anzeigen">${esc(stemName(x))} ›</button>` : '';
+  const divorced = (x) => x.divorced || (u.main && u.main.divorced && u.main.partnerOf === x.id);
+  const head = u.main ? pBtn(u.main) + stemBtn(u.main) : `<div class="t-p placeholder"><b>${esc(u.placeholder)}</b><small>nicht erfasst</small></div>`;
+  return `<div class="t-node${kids.length ? ' has-kids' : ''}${isC ? ' collapsed' : ''}" data-node="${esc(key)}" data-depth="${depth}">
+    <div class="t-unit">${head}${(u.partners || []).map(x => `<div class="t-ptn${divorced(x) ? ' div' : ''}"><span class="sym" title="${divorced(x) ? 'geschieden' : 'verheiratet'}">${divorced(x) ? '⚮' : '⚭'}</span><div class="t-ptn-in">${pBtn(x)}${stemBtn(x)}</div></div>`).join('')}
+    ${kids.length ? `<button class="t-tog" data-tog="${esc(key)}" aria-expanded="${!isC}" title="${isC ? 'Kinder zeigen' : 'Kinder ausblenden'}">${kids.length}</button>` : ''}</div>
+    ${kids.length ? `<div class="t-kids">${kids.map(k => treeNodeHtml(k, ctx, depth + 1)).join('')}</div>` : ''}
   </div>`;
 }
 
-function viewTree(main, focusId) {
+let currentStem = null;
+function viewTree(main, focusId, stemId) {
   if (!S.persons.length) { main.innerHTML = '<div class="page"><div class="card empty">Noch keine Personen. <a href="#/">Zur Übersicht</a></div></div>'; return; }
-  const collapsed = new Set(LS.get('stb.collapsed', []));
-  const maxGen = Math.max(...S.persons.map(p => S.gen.get(p.id) || 0));
+  // Person aus einer Herkunftsfamilie → deren Stamm zeigen
+  const fp = focusId && S.byId.get(focusId);
+  if (!stemId && fp && fp.kind === 'origin') stemId = fp.originOf;
+  const stemP = stemId && S.byId.get(stemId);
+  if (stemId && (!stemP || stemP.kind !== 'partner')) stemId = null;
+  currentStem = stemId || null;
+  const roots = currentStem ? [stemUnit(currentStem)] : S.roots.map(unitOf);
+  const ctx = { collapsed: new Set(LS.get('stb.collapsed', [])), stemId: currentStem };
+  const depth = Math.max(...roots.map(unitDepth));
+  const stems = stemList();
+  const mainName = S.title.replace(/^Stammbaum\s+/i, '') || 'Hauptstamm';
+  const genName = (g) => currentStem ? (g === 0 ? 'Eltern' : g === 1 ? 'Kinder' : GEN_NAMES[g] || '') : GEN_NAMES[g] || '';
   main.innerHTML = `<div class="tree-page">
     <div class="tree-bar">
+      ${stems.length ? `<select class="input stem-sel" id="stemSel" aria-label="Stamm wählen"><option value="">${esc(mainName)}</option>${stems.map(P => `<option value="${esc(P.id)}"${P.id === currentStem ? ' selected' : ''}>${esc(stemName(P))} – Herkunft von ${esc(fullName(P))}</option>`).join('')}</select>` : ''}
       <div class="search"><input class="input" id="tSearch" placeholder="Person suchen …" aria-label="Person im Stammbaum suchen"></div>
       <div class="zoom" role="group" aria-label="Zoom"><button data-z="-1" aria-label="Verkleinern">−</button><span id="zv"></span><button data-z="1" aria-label="Vergrößern">+</button></div>
       <button class="btn sm" data-act="open">Alle aufklappen</button>
@@ -554,17 +597,23 @@ function viewTree(main, focusId) {
       ${S.me ? '<button class="btn sm" data-act="me">Zu mir</button>' : ''}
       <button class="btn sm ghost" data-act="print">Drucken</button>
     </div>
+    ${currentStem ? `<div class="stem-note">Stamm <b>${esc(stemName(stemP))}</b> – Herkunftsfamilie von ${esc(fullName(stemP))}, weiter mit den gemeinsamen Nachkommen. <a href="#/baum/${esc(currentStem)}">Zurück zu ${esc(mainName)}</a></div>` : ''}
     <div class="tree-body">
       <div class="tree-wrap" id="tw"><div class="tree-canvas" id="tc">
-        <div class="gens">${Array.from({ length: maxGen + 1 }, (_, g) => `<div><b>${g + 1}.</b>${GEN_NAMES[g] || ''}</div>`).join('')}</div>
-        <div id="tree">${S.roots.map(r => treeNodeHtml(r, collapsed)).join('')}</div>
+        <div class="gens">${Array.from({ length: depth }, (_, g) => `<div><b>${g + 1}.</b>${genName(g)}</div>`).join('')}</div>
+        <div id="tree">${roots.map(r => treeNodeHtml(r, ctx)).join('')}</div>
       </div></div>
       <aside class="drawer" id="drawer" hidden></aside>
     </div></div>`;
   const tw = $('#tw'), tc = $('#tc');
   const applyZoom = () => { tc.style.zoom = treeZoom; $('#zv').textContent = Math.round(treeZoom * 100) + ' %'; LS.set('stb.zoom', treeZoom); };
   applyZoom();
-  const saveCollapsed = () => LS.set('stb.collapsed', $$('.t-node.collapsed', tc).map(n => n.dataset.node));
+  const saveCollapsed = () => {
+    const shown = new Set($$('.t-node', tc).map(n => n.dataset.node));
+    const keep = LS.get('stb.collapsed', []).filter(id => !shown.has(id));
+    LS.set('stb.collapsed', [...keep, ...$$('.t-node.collapsed', tc).map(n => n.dataset.node)]);
+  };
+  $('#stemSel')?.addEventListener('change', (e) => { location.hash = e.target.value ? '#/stamm/' + e.target.value : '#/baum'; });
 
   tc.addEventListener('click', (e) => {
     const tog = e.target.closest('[data-tog]');
@@ -574,7 +623,9 @@ function viewTree(main, focusId) {
       tog.setAttribute('aria-expanded', !c); tog.title = c ? 'Kinder zeigen' : 'Kinder ausblenden';
       saveCollapsed(); return;
     }
-    const pb = e.target.closest('.t-p');
+    const st = e.target.closest('[data-stem]');
+    if (st && !tw.dataset.moved) { location.hash = '#/stamm/' + st.dataset.stem; return; }
+    const pb = e.target.closest('.t-p[data-id]');
     if (pb && !tw.dataset.moved) openDrawer(pb.dataset.id);
   });
   $('.tree-bar').addEventListener('click', (e) => {
@@ -582,11 +633,14 @@ function viewTree(main, focusId) {
     if (z) { treeZoom = Math.max(0.4, Math.min(1.6, +(treeZoom + 0.1 * +z.dataset.z).toFixed(2))); applyZoom(); }
     const a = e.target.closest('[data-act]')?.dataset.act;
     if (a === 'open') { $$('.t-node.collapsed', tc).forEach(n => n.classList.remove('collapsed')); saveCollapsed(); }
-    if (a === 'close') { $$('.t-node.has-kids', tc).forEach(n => n.classList.toggle('collapsed', (S.gen.get(n.dataset.node) || 0) >= 2)); saveCollapsed(); }
+    if (a === 'close') { $$('.t-node.has-kids', tc).forEach(n => n.classList.toggle('collapsed', +n.dataset.depth >= 2)); saveCollapsed(); }
     if (a === 'me') focusInTree(S.me);
     if (a === 'print') { $$('.t-node.collapsed', tc).forEach(n => n.classList.remove('collapsed')); setTimeout(() => window.print(), 50); }
   });
-  attachPicker($('#tSearch'), (p) => { focusInTree(p.id); openDrawer(p.id); }, { keepText: true });
+  attachPicker($('#tSearch'), (p) => {
+    if (!$(`.t-p[data-id="${CSS.escape(p.id)}"]`, tc)) { location.hash = p.kind === 'origin' ? `#/stamm/${p.originOf}/${p.id}` : `#/baum/${p.id}`; return; }
+    focusInTree(p.id); openDrawer(p.id);
+  }, { keepText: true });
 
   // Ziehen zum Verschieben (Maus)
   let drag = null;
@@ -607,16 +661,15 @@ function viewTree(main, focusId) {
   }, { passive: false });
 
   if (focusId && S.byId.has(focusId)) { focusInTree(focusId); openDrawer(focusId); }
+  else if (currentStem) setTimeout(() => focusInTree(currentStem), 50);
 }
 
 function focusInTree(id) {
-  const p = S.byId.get(id); if (!p) return;
-  const anchor = p.kind === 'partner' ? S.byId.get(p.partnerOf) : p;
-  let cur = anchor && S.byId.get(anchor.parentId);
-  while (cur) { $(`.t-node[data-node="${CSS.escape(cur.id)}"]`)?.classList.remove('collapsed'); cur = S.byId.get(cur.parentId); }
-  LS.set('stb.collapsed', $$('.t-node.collapsed').map(n => n.dataset.node));
   const btn = $(`.t-p[data-id="${CSS.escape(id)}"]`);
   if (!btn) return;
+  // alle übergeordneten Zweige aufklappen
+  for (let n = btn.closest('.t-node'); n; n = n.parentElement?.closest('.t-node')) n.classList.remove('collapsed');
+  for (let n = btn.closest('.t-node')?.parentElement?.closest('.t-node'); n; n = n.parentElement?.closest('.t-node')) n.querySelector(':scope > .t-unit .t-tog')?.setAttribute('aria-expanded', 'true');
   btn.scrollIntoView({ block: 'center', inline: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
   btn.classList.remove('flash'); void btn.offsetWidth; btn.classList.add('flash');
 }
@@ -628,7 +681,7 @@ function openDrawer(id) {
   d.innerHTML = `<button class="btn sm ghost x" aria-label="Schließen" data-close>✕</button>${personHtml(S.byId.get(id), true)}`;
   bindPersonActions(d, S.byId.get(id));
   d.querySelector('[data-close]').onclick = () => { d.hidden = true; };
-  history.replaceState(null, '', '#/baum/' + id);
+  history.replaceState(null, '', currentStem ? `#/stamm/${currentStem}/${id}` : '#/baum/' + id);
 }
 
 // ================= Person =================
@@ -666,7 +719,8 @@ function personHtml(p, compact) {
       </div>
     </header>
     <div class="btn-row p-actions">
-      <a class="btn" href="#/baum/${esc(p.id)}">Im Stammbaum</a>
+      <a class="btn" href="${p.kind === 'origin' ? `#/stamm/${esc(p.originOf)}/${esc(p.id)}` : `#/baum/${esc(p.id)}`}">Im Stammbaum</a>
+      ${p.kind === 'partner' && (S.origins.get(p.id) || []).some(o => o.role !== 'child') ? `<a class="btn" href="#/stamm/${esc(p.id)}">${esc(stemName(p))} als Stamm</a>` : ''}
       ${compact ? `<a class="btn" href="#/p/${esc(p.id)}">Ganze Seite</a>` : ''}
       <a class="btn" href="#/verwandt/${esc(S.me && S.me !== p.id ? S.me : '-')}/${esc(p.id)}">Verwandtschaft</a>
       <button class="btn primary" data-pa="edit">${isAdmin() ? 'Bearbeiten' : 'Änderung vorschlagen'}</button>
@@ -691,7 +745,7 @@ function personHtml(p, compact) {
       ${sibs.length ? `<div class="kin-group"><div>Geschwister (${sibs.length})</div><div class="chips">${sibs.map(x => chip(x)).join('')}</div></div>` : ''}
       ${kids.length ? `<div class="kin-group"><div>Kinder (${kids.length})</div><div class="chips">${kids.map(x => chip(x, x.kind === 'origin' ? 'aus anderer Beziehung' : p.kind === 'blood' && x.otherParentId && partners.length > 1 ? 'mit ' + (S.byId.get(x.otherParentId)?.firstName || '') : p.kind === 'blood' && !x.otherParentId && partners.length ? 'anderer Elternteil' : '')).join('')}</div></div>` : ''}
       ${p.kind === 'partner' ? `<div class="btn-row" style="margin-top:12px"><button class="btn sm" data-pa="origin-parent">+ Elternteil von ${esc(p.firstName.split(' ')[0] || '')}</button><button class="btn sm" data-pa="origin-sibling">+ Geschwister</button><button class="btn sm" data-pa="origin-child">+ Kind aus anderer Beziehung</button></div>` : ''}
-      ${p.kind === 'origin' ? `<div class="hint" style="margin-top:10px">Gehört zur Herkunftsfamilie von <a href="#/p/${esc(p.originOf)}">${esc(fullName(S.byId.get(p.originOf)))}</a> und erscheint deshalb nicht im großen Stammbaum.</div>` : ''}
+      ${p.kind === 'origin' ? `<div class="hint" style="margin-top:10px">Gehört zur Herkunftsfamilie von <a href="#/p/${esc(p.originOf)}">${esc(fullName(S.byId.get(p.originOf)))}</a> – im Stammbaum über die Stamm-Auswahl „${esc(stemName(S.byId.get(p.originOf) || {}))}“ zu sehen.</div>` : ''}
     </section>
     <section class="sec"><h3>Quellen &amp; Dokumente${srcs.length ? ` (${srcs.length})` : ''}</h3>
       ${srcs.length ? `<div class="src-grid">${srcs.map(sourceTile).join('')}</div>` : `<p class="muted" style="margin:0">Noch keine Quellen. Traueranzeigen, Stammbuchauszüge, Urkunden oder alte Fotos helfen, die Angaben zu belegen.</p>`}

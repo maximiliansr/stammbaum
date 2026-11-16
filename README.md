@@ -9,6 +9,8 @@ Alle Familienmitglieder öffnen ihn im Browser (Handy, Tablet, PC) mit einem gem
 ## Funktionen
 
 - **Stammbaum** mit Generationen-Spalten, Zoom, Suche, Auf-/Zuklappen, Druckansicht
+- **Mehrere Stämme**: Herkunftsfamilien angeheirateter Partner lassen sich als eigener Baum anzeigen
+  (Eltern → Geschwister → gemeinsame Nachkommen), Umschalten per Auswahl oder Knopf am Partner
 - **Personenseiten** mit Eltern, Partnern, Geschwistern, Kindern, Foto und eigenen Feldern (Beruf, E-Mail …)
 - **„Wer bist du?“** – jede Person zeigt dann „Für dich: Cousine 2. Grades“, „Großonkel“, „Schwägerin“ …
 - **Verwandtschaftsrechner** mit gezeichnetem Weg über die gemeinsamen Vorfahren
@@ -157,7 +159,7 @@ scripts/           Beispieldaten erzeugen, alte Exporte umwandeln
 
 ## Versionen
 
-Unten auf jeder Seite steht die laufende Version, z. B. „Stammbaum v1.1.0 · e2ec756“ – die Nummer aus
+Unten auf jeder Seite steht die laufende Version, z. B. „Stammbaum v1.2.0 · 1a2b3c4“ – die Nummer aus
 `package.json` und der Commit, aus dem das Image gebaut wurde (verlinkt auf GitHub). Auch `/healthz` liefert beides.
 
 Neue Version veröffentlichen: `version` in `package.json` erhöhen, committen und einen Tag setzen
