@@ -18,11 +18,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
       - name: Syntax prüfen
         run: |
           node --check server.js
-          node --check public/app.js
-          for f in lib/*.js scripts/*.js; do node --check "$f"; done
+          for f in public/*.js lib/*.js lib/features/*.js scripts/*.js; do node --check "$f"; done
+
+      - name: Tests
+        run: npm test
 
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3

@@ -15,8 +15,11 @@ services:
     environment:
       TRUST_PROXY: "true"
       COOKIE_SECURE: "true"
+      TZ: Europe/Berlin
     volumes:
       - ./data:/data
+      # optional: Ziel für die externe Sicherung (z. B. NAS-Freigabe)
+      # - /mnt/nas/stammbaum-backup:/backup
     # ports:
     #   - "3000:3000"
 

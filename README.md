@@ -23,6 +23,18 @@ Alle Familienmitglieder öffnen ihn im Browser (Handy, Tablet, PC) mit einem gem
 - **Zeitleiste** je Person: Partner & Kinder, Eltern & Geschwister, Vorfahren
 - **Interview**: fragt fehlende Daten und Beziehungen nacheinander ab, nahe Familie zuerst
 - **Geburtstage** der nächsten 12 Monate, Gedenktage und **Kalender-Abo** (iPhone, Android, Outlook)
+- **Jubiläen**: runde Geburtstage, Hochzeitstage (Silber, Gold, Diamant …), „heute vor 100 Jahren“ –
+  in der Übersicht, auf der Geburtstagsseite und im Kalender-Abo
+- **Karte der Orte**: Geburts-, Wohn- und Sterbeorte auf einer OpenStreetMap-Karte; Positionen werden
+  automatisch nachgeschlagen und lassen sich per Klick korrigieren
+- **Poster & PDF**: ganzer Stammbaum oder ein Stamm als Poster (A4 bis A0), als PDF drucken oder als SVG
+  herunterladen, dazu eine nummerierte Nachfahrenliste
+- **GEDCOM** (Ancestry, MyHeritage, Gramps, FamilySearch …): Export und Import mit **Abgleich** –
+  erkannte Personen, vorgeschlagene Ergänzungen und neue Personen einzeln auswählbar
+- **Dubletten** finden und zusammenführen (Kinder, Partner, Quellen und Fotos wandern mit)
+- **Rückgängig machen** direkt im Änderungsprotokoll
+- **Benachrichtigungen** über [ntfy](https://ntfy.sh) (z. B. bei neuen Vorschlägen)
+- **Externe Sicherung**: tägliches Komplettarchiv in einen Ordner (NAS), per WebDAV (Nextcloud …) oder zu S3
 - **Verwaltung**: Vorschläge mit Vorher/Nachher-Ansicht, Änderungsprotokoll, Datenprüfung,
   Export als JSON/CSV (Excel), Import
 - Tägliche Sicherung, keine externen Abhängigkeiten, keine Google-Fonts (DSGVO-freundlich),
@@ -76,8 +88,11 @@ Dann <http://SERVER-IP:3000> öffnen.
          ADMIN_PASSWORD: ${ADMIN_PASSWORD}
          TRUST_PROXY: "true"
          COOKIE_SECURE: "false"   # auf "true", sobald HTTPS über einen Reverse-Proxy läuft
+         TZ: Europe/Berlin
        volumes:
          - /opt/stammbaum/data:/data
+         # optional für die externe Sicherung in einen Ordner:
+         # - /mnt/nas/stammbaum-backup:/backup   (vorher: chown -R 1000:1000 /mnt/nas/stammbaum-backup)
    ```
 
 3. Unter *Environment variables* `FAMILY_PASSWORD` und `ADMIN_PASSWORD` setzen → **Deploy**.
@@ -115,6 +130,12 @@ auf Port 3000 weiterleiten und `COOKIE_SECURE=true` setzen. Ohne offene Ports: C
 | `COOKIE_SECURE` | `true` hinter HTTPS | `false` |
 | `TRUST_PROXY` | `true` hinter Reverse-Proxy (für IP-basierte Sperre bei Fehlversuchen) | `false` |
 | `DOMAIN` | Domain für Caddy (nur docker-compose) | – |
+| `TZ` | Zeitzone, z. B. `Europe/Berlin` (Sicherungs-Uhrzeit) | UTC |
+| `PUBLIC_URL` | Öffentliche Adresse für Links in Benachrichtigungen | – |
+| `NTFY_*`, `BACKUP_*`, `MAP_*` | Startwerte für Benachrichtigungen, Sicherung, Karte – siehe `.env.example` | – |
+
+Benachrichtigungen, externe Sicherung und Karte lassen sich bequem unter **Verwaltung → Einstellungen**
+einrichten (inkl. Test-Nachricht und „Jetzt sichern“). Diese Einstellungen liegen in `data/einstellungen.json`.
 
 Passwort ändern → Container neu starten. Alle Anmeldungen und die alte Kalender-Abo-Adresse werden ungültig.
 
@@ -139,7 +160,24 @@ Alles liegt im Datenordner (`/data` im Container):
 | `fotos/`, `quellen/` | Porträts und Dokumente |
 | `backups/` | Tägliche Sicherungen + Sicherung vor jedem Import |
 
-Den Datenordner zusätzlich extern sichern (z. B. Proxmox-Backup des LXC oder NAS-Backup).
+Den Datenordner zusätzlich extern sichern – am einfachsten über **Verwaltung → Einstellungen → Externe Sicherung**
+(täglich, als `.tar.gz` in einen Ordner, per WebDAV oder zu S3). Dort lässt sich das Komplettarchiv auch direkt
+herunterladen.
+
+**Wiederherstellen aus einem Archiv:**
+
+```bash
+docker stop stammbaum
+tar -xzf stammbaum-2026-11-16-0330.tar.gz
+cp -a stammbaum-daten/. /opt/stammbaum/data/
+chown -R 1000:1000 /opt/stammbaum/data
+docker start stammbaum
+```
+
+| Datei | Inhalt |
+|---|---|
+| `einstellungen.json` | Einstellungen aus der Verwaltung (enthält Zugangsdaten für ntfy/Sicherung) |
+| `orte.json` | Zwischenspeicher der Kartenpositionen |
 
 ## Datenschutz
 
@@ -149,19 +187,42 @@ Den Datenordner zusätzlich extern sichern (z. B. Proxmox-Backup des LXC oder NA
 - **Echte Familiendaten gehören nie ins Repository.** `data/`, `.env` und typische Exportnamen sind in
   `.gitignore` ausgeschlossen – trotzdem vor jedem Commit `git status` prüfen.
 
+## GEDCOM-Import
+
+Verwaltung → **GEDCOM** → Datei wählen. Der Stammbaum gleicht die Datei ab:
+
+- **Erkannte Personen** (Name, Geburtsjahr, Familienzusammenhang) – fehlende Angaben sind zur Übernahme
+  vorausgewählt, abweichende nicht. Falsche Zuordnungen lassen sich ändern.
+- **Neue Personen** werden passend eingehängt: Kinder, Partner, Eltern über der bisher ältesten Generation,
+  Herkunftsfamilien angeheirateter Partner (Eltern, Geschwister, Großeltern …).
+- **Nicht zuordenbar** – ohne Verbindung zu erkannten Personen; kann eine neue Stammlinie beginnen.
+
+Vor der Übernahme wird automatisch gesichert; jede Änderung steht im Protokoll und lässt sich einzeln
+rückgängig machen.
+
+## Entwicklung
+
+```bash
+npm test     # startet echte Server-Instanzen und prüft API, GEDCOM, Sicherung, Benachrichtigungen …
+```
+
+Die Tests laufen bei jedem Push in GitHub Actions – schlägt einer fehl, wird kein neues Image gebaut.
+
 ## Aufbau
 
 ```
 server.js          HTTP-Server, Anmeldung, API (nur Node-Standardbibliothek)
-lib/               Datenmodell, Ablage/Sicherung, Import, Kalender (ICS)
-public/            Oberfläche (HTML/CSS/JS ohne Framework, Schriften lokal)
+lib/               Datenmodell, Ablage, Import, Kalender (ICS), GEDCOM, Sicherung, Benachrichtigungen
+lib/features/      Einstellungen, Rückgängig, Dubletten, GEDCOM, Orte, Sicherung
+test/              Automatische Tests (node:test)
+public/            Oberfläche (HTML/CSS/JS ohne Framework, Schriften lokal, Leaflet für die Karte)
 seed/beispiel.json Erfundene Beispielfamilie
 scripts/           Beispieldaten erzeugen, alte Exporte umwandeln
 ```
 
 ## Versionen
 
-Unten auf jeder Seite steht die laufende Version, z. B. „Stammbaum v1.2.0 · 1a2b3c4“ – die Nummer aus
+Unten auf jeder Seite steht die laufende Version, z. B. „Stammbaum v2.0.0 · 1a2b3c4“ – die Nummer aus
 `package.json` und der Commit, aus dem das Image gebaut wurde (verlinkt auf GitHub). Auch `/healthz` liefert beides.
 
 Neue Version veröffentlichen: `version` in `package.json` erhöhen, committen und einen Tag setzen
@@ -170,3 +231,4 @@ Neue Version veröffentlichen: `version` in `package.json` erhöhen, committen u
 ## Lizenz
 
 MIT – siehe [LICENSE](LICENSE). Schriften: Literata und IBM Plex Sans (SIL Open Font License).
+Karte: [Leaflet](https://leafletjs.com) (BSD-2), Kartendaten © OpenStreetMap-Mitwirkende, Ortssuche über Nominatim.

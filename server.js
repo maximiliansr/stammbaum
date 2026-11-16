@@ -8,6 +8,8 @@ const { Store } = require('./lib/store');
 const { sanitizeFields, sanitizeSource, SOURCE_KINDS, emptyPerson, newId, clean } = require('./lib/model');
 const { importAny, validateGraph } = require('./lib/importer');
 const { birthdayCalendar } = require('./lib/ics');
+const { Settings } = require('./lib/settings');
+const { makeNotifier } = require('./lib/notify');
 
 // ---------- Konfiguration ----------
 const PORT = Number(process.env.PORT || 3000);
@@ -34,6 +36,9 @@ if (FAMILY_PASSWORD === ADMIN_PASSWORD) {
 
 // BEISPIELDATEN=false → leerer Start statt erfundener Beispielfamilie
 const store = new Store(DATA_DIR, /^(0|false|nein|no)$/i.test(process.env.BEISPIELDATEN || 'true') ? null : SEED_FILE);
+
+const settings = new Settings(DATA_DIR);
+const notify = makeNotifier(settings);
 
 // Geheimschlüssel für Sitzungen: aus Umgebung oder einmalig erzeugt und gespeichert
 const SECRET = (() => {
@@ -99,7 +104,7 @@ const SEC_HEADERS = {
   'X-Frame-Options': 'DENY',
   'X-Robots-Tag': 'noindex, nofollow',
   'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
-  'Content-Security-Policy': "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+  'Content-Security-Policy': "default-src 'self'; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
 };
 function send(res, status, body, headers = {}) {
   const isBuf = Buffer.isBuffer(body);
@@ -423,6 +428,8 @@ route('POST', '/api/vorschlaege', 'family', (ctx) => {
   if (b.photo) { fs.writeFileSync(store.pendingPath(s.id), decodeJpeg(b.photo)); s.hasPhoto = true; }
   store.suggestions.push(s);
   store.saveSuggestions();
+  const what = { edit: 'Änderung zu', child: 'Neues Kind bei', partner: 'Neue/r Partner/in bei', origin: 'Herkunftsfamilie von', remark: 'Hinweis zu', source: 'Neue Quelle zu' }[type];
+  notify.send('vorschlag', `Vorschlag von ${author}`, `${what} ${displayName(target)}${s.message ? '\n„' + s.message.slice(0, 200) + '“' : ''}`, { tags: 'family', click: '/#/admin/vorschlaege' });
   return { ok: true, id: s.id };
 });
 
@@ -588,7 +595,6 @@ route('DELETE', '/api/personen/([a-zA-Z0-9_-]+)/foto', 'admin', (ctx, m) => {
   return { person: p };
 });
 
-route('GET', '/api/protokoll', 'admin', () => store.readLog(500));
 
 route('GET', '/api/export\\.json', 'admin', (ctx) => {
   const stamp = new Date().toISOString().slice(0, 10);
@@ -630,6 +636,11 @@ route('GET', '/kalender/([A-Za-z0-9_-]+)/geburtstage\\.ics', null, (ctx, m) => {
   if (m[1].length !== ICS_TOKEN.length || !crypto.timingSafeEqual(Buffer.from(m[1]), Buffer.from(ICS_TOKEN))) throw new HttpError(404, 'Nicht gefunden');
   ctx.raw(200, birthdayCalendar(store.doc.persons, SITE_TITLE || store.doc.title), { 'Content-Type': 'text/calendar; charset=utf-8', 'Cache-Control': 'private, max-age=3600' });
 });
+
+// ---------- Weitere Funktionen (lib/features) ----------
+const app = { route, store, settings, notify, HttpError, createPerson, updatePerson, deletePerson, displayName, sanitizeFields, clean,
+  emptyPerson, newId, decodeJpeg, isDescendant, APP_VERSION, SITE_TITLE, DATA_DIR };
+for (const f of ['einstellungen', 'rueckgaengig', 'dubletten', 'gedcom', 'orte', 'sicherung']) require('./lib/features/' + f)(app);
 
 // ---------- Statische Dateien ----------
 const PUBLIC = path.join(__dirname, 'public');

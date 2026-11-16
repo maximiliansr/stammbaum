@@ -384,7 +384,7 @@ function attachPicker(input, onPick, opts = {}) {
 // ================= Gerüst & Navigation =================
 const NAV = [
   ['#/', 'Übersicht'], ['#/baum', 'Stammbaum'], ['#/personen', 'Personen'],
-  ['#/geburtstage', 'Geburtstage'], ['#/verwandt', 'Verwandtschaft'], ['#/interview', 'Interview'],
+  ['#/geburtstage', 'Geburtstage'], ['#/karte', 'Karte'], ['#/verwandt', 'Verwandtschaft'], ['#/interview', 'Interview'],
 ];
 function shell() {
   const me = S.me && S.byId.get(S.me);
@@ -430,6 +430,8 @@ async function router() {
   if (v === 'geburtstage') return viewBirthdays(main);
   if (v === 'verwandt') return viewRelation(main, parts[1], parts[2]);
   if (v === 'interview') return viewInterview(main, parts[1]);
+  if (v === 'karte') return viewMap(main, parts[1]);
+  if (v === 'poster') return viewPoster(main, parts[1]);
   if (v === 'admin' && isAdmin()) return viewAdmin(main, parts[1] || 'vorschlaege');
   main.innerHTML = '<div class="page"><div class="empty">Seite nicht gefunden. <a href="#/">Zur Übersicht</a></div></div>';
 }
@@ -526,12 +528,14 @@ function upcomingBirthdays(days = 366) {
   return out.sort((a, b) => a.inDays - b.inDays);
 }
 function whenText(n) { return n === 0 ? 'heute' : n === 1 ? 'morgen' : n < 7 ? `in ${n} Tagen` : n < 14 ? 'nächste Woche' : `in ${n} Tagen`; }
+const isRoundAge = (n) => n >= 18 && (n % 10 === 0 || [18, 25, 75, 85, 95].includes(n));
 function bdayRow(b, showRel = true) {
+  if (b.wedding) return weddingRow(b);
   const rel = showRel ? shortRelToMe(b.p.id) : null;
   return `<a class="bday-row${b.inDays === 0 ? ' today' : ''}" href="#/p/${esc(b.p.id)}">
     <div class="bday-date"><b>${b.next.getDate()}</b><span>${MON3[b.next.getMonth()]}</span></div>
     ${avatar(b.p)}
-    <div class="who">${esc(fullName(b.p))}<small>wird ${b.turns}${rel ? ' · ' + esc(rel) : ''}</small></div>
+    <div class="who">${esc(fullName(b.p))}${isRoundAge(b.turns) ? ` <span class="pill warn">${b.turns}. Geburtstag</span>` : ''}<small>wird ${b.turns}${rel ? ' · ' + esc(rel) : ''}</small></div>
     <span class="when${b.inDays < 7 ? ' soon' : ''}">${whenText(b.inDays)}</span></a>`;
 }
 
@@ -576,6 +580,7 @@ function viewHome(main) {
         </div>
       </div>
       <div class="grid">
+        <div id="jubHost"></div>
         <div class="card"><h2>Stöbern</h2>
           <div class="btn-row"><a class="btn" href="#/baum">Ganzer Stammbaum</a><a class="btn" href="#/personen">Alle Personen</a></div>
           <p class="hint" style="margin-top:12px">Fehlt jemand oder stimmt etwas nicht? Auf der Seite der Person „Änderung vorschlagen“ wählen – die Verwaltung prüft und übernimmt es.</p>
@@ -583,6 +588,7 @@ function viewHome(main) {
         ${recent.length ? `<div class="card"><h2>Zuletzt ergänzt</h2><div class="chips">${recent.map(p => chip(p)).join('')}</div></div>` : ''}
       </div>
     </div></div>`;
+  renderJubilees($('#jubHost'));
   $('#pickMe')?.addEventListener('click', openMeDialog);
 }
 
@@ -673,7 +679,7 @@ function viewTree(main, focusId, stemId) {
       <button class="btn sm" data-act="open">Alle aufklappen</button>
       <button class="btn sm" data-act="close">Bis Enkel</button>
       ${S.me ? '<button class="btn sm" data-act="me">Zu mir</button>' : ''}
-      <button class="btn sm ghost" data-act="print">Drucken</button>
+      <a class="btn sm" href="#/poster${currentStem ? '/' + esc(currentStem) : ''}">Poster / PDF</a>
     </div>
     ${currentStem ? `<div class="stem-note">Stamm <b>${esc(stemName(stemP))}</b> – Herkunftsfamilie von ${esc(fullName(stemP))}, weiter mit den gemeinsamen Nachkommen. <a href="#/baum/${esc(currentStem)}">Zurück zu ${esc(mainName)}</a></div>` : ''}
     <div class="tree-body">
@@ -1151,7 +1157,8 @@ function viewList(main) {
 
 // ================= Geburtstage =================
 function viewBirthdays(main) {
-  const all = upcomingBirthdays(366);
+  const showWed = LS.get('stb.weddings', true);
+  const all = [...upcomingBirthdays(366), ...(showWed ? upcomingWeddings(366) : [])].sort((a, b) => a.inDays - b.inDays);
   const showDeath = LS.get('stb.deathdays', false);
   const byMonth = new Map();
   for (const b of all) { const k = b.next.getFullYear() * 12 + b.next.getMonth(); if (!byMonth.has(k)) byMonth.set(k, []); byMonth.get(k).push(b); }
@@ -1167,8 +1174,8 @@ function viewBirthdays(main) {
   }
   const noDate = S.persons.filter(p => isLiving(p) && !parseFull(p.birth)).length;
   main.innerHTML = `<div class="page">
-    <div class="page-head"><div><div class="eyebrow">Die nächsten zwölf Monate</div><h1>Geburtstage</h1></div>
-      <label class="check"><input type="checkbox" id="dd"${showDeath ? ' checked' : ''}> Gedenktage anzeigen</label></div>
+    <div class="page-head"><div><div class="eyebrow">Die nächsten zwölf Monate</div><h1>Geburtstage &amp; Jubiläen</h1></div>
+      <div class="btn-row"><label class="check"><input type="checkbox" id="wd"${showWed ? ' checked' : ''}> Hochzeitstage</label><label class="check"><input type="checkbox" id="dd"${showDeath ? ' checked' : ''}> Gedenktage</label></div></div>
     <div class="grid cal-grid">
       <div>
         ${showDeath ? `<div class="card" style="margin-bottom:20px"><h2>Gedenktage (nächste 60 Tage)</h2>${memorial.length ? memorial.map(m => `<a class="bday-row" href="#/p/${esc(m.p.id)}"><div class="bday-date"><b>${m.next.getDate()}</b><span>${MON3[m.next.getMonth()]}</span></div>${avatar(m.p)}<div class="who">${esc(fullName(m.p))}<small>${m.years}. Todestag</small></div><span class="when">${whenText(m.inDays)}</span></a>`).join('') : '<div class="empty">Keine.</div>'}</div>` : ''}
@@ -1189,6 +1196,7 @@ function viewBirthdays(main) {
       </aside>
     </div></div>`;
   $('#dd').onchange = (e) => { LS.set('stb.deathdays', e.target.checked); viewBirthdays(main); };
+  $('#wd').onchange = (e) => { LS.set('stb.weddings', e.target.checked); viewBirthdays(main); };
   $('#copyIcs').onclick = async () => {
     try { await navigator.clipboard.writeText(icsUrl); toast('Adresse kopiert'); } catch { $('#icsUrl').select(); toast('Bitte manuell kopieren'); }
   };
@@ -1619,7 +1627,7 @@ function fmtVal(k, v) {
 function fmtTime(iso) { const d = new Date(iso); return d.toLocaleDateString('de-DE') + ' ' + d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }); }
 
 async function viewAdmin(main, tab) {
-  const tabs = [['vorschlaege', `Vorschläge${S.openSugg ? ` <span class="badge">${S.openSugg}</span>` : ''}`], ['protokoll', 'Änderungsprotokoll'], ['pruefung', 'Datenprüfung'], ['daten', 'Sichern & Einlesen']];
+  const tabs = [['vorschlaege', `Vorschläge${S.openSugg ? ` <span class="badge">${S.openSugg}</span>` : ''}`], ['protokoll', 'Änderungsprotokoll'], ['dubletten', 'Dubletten'], ['pruefung', 'Datenprüfung'], ['gedcom', 'GEDCOM'], ['daten', 'Sichern & Einlesen'], ['einstellungen', 'Einstellungen']];
   main.innerHTML = `<div class="page"><div class="page-head"><div><div class="eyebrow">Nur für Admins</div><h1>Verwaltung</h1></div></div>
     <nav class="tabs">${tabs.map(([k, t]) => `<a href="#/admin/${k}"${k === tab ? ' aria-current="page"' : ''}>${t}</a>`).join('')}</nav><div id="at"><div class="empty">Lädt …</div></div></div>`;
   const at = $('#at');
@@ -1627,6 +1635,9 @@ async function viewAdmin(main, tab) {
     if (tab === 'vorschlaege') await adminSuggestions(at);
     else if (tab === 'protokoll') await adminLog(at);
     else if (tab === 'pruefung') adminChecks(at);
+    else if (tab === 'dubletten') await adminDupes(at);
+    else if (tab === 'gedcom') adminGedcom(at);
+    else if (tab === 'einstellungen') await adminSettings(at);
     else adminData(at);
   } catch (e) { at.innerHTML = `<div class="err">${esc(e.message)}</div>`; }
 }
@@ -1708,8 +1719,20 @@ function openSuggestionEditor(s) {
 
 async function adminLog(at) {
   const log = await api('GET', '/api/protokoll');
+  at.onclick = async (e) => {
+    const b = e.target.closest('[data-undo]'); if (!b) return;
+    const go = async (force) => api('POST', `/api/protokoll/${b.dataset.undo}/rueckgaengig`, { force });
+    b.disabled = true;
+    try { await go(false); }
+    catch (err) {
+      if (/Trotzdem/.test(err.message) && confirm(err.message)) { try { await go(true); } catch (e2) { toast(e2.message, true); b.disabled = false; return; } }
+      else { toast(err.message, true); b.disabled = false; return; }
+    }
+    toast('Rückgängig gemacht'); await loadData(); shell(); router();
+  };
   at.innerHTML = log.length ? `<div class="card">${log.map(l => `<div class="log-row"><time>${fmtTime(l.at)}</time><div>
-    <b>${esc(l.action)}</b> · ${l.personId && S.byId.has(l.personId) ? `<a href="#/p/${esc(l.personId)}">${esc(l.name)}</a>` : esc(l.name || '')} <span class="muted">· ${esc(l.who)}</span>
+    <div class="log-head"><span><b>${esc(l.action)}</b> · ${l.personId && S.byId.has(l.personId) ? `<a href="#/p/${esc(l.personId)}">${esc(l.name)}</a>` : esc(l.name || '')} <span class="muted">· ${esc(l.who)}</span></span>
+    ${l.undoable ? `<button class="btn sm" data-undo="${esc(l.id)}" title="Diese Änderung zurücknehmen">↶ Rückgängig</button>` : l.undone ? '<span class="pill">rückgängig gemacht</span>' : ''}</div>
     ${l.changes ? `<table class="diff">${Object.entries(l.changes).map(([k, [a, b]]) => `<tr><td>${esc(FIELD_LABELS[k] || k)}</td><td>${a !== '' && a !== null ? `<del>${esc(fmtVal(k, a))}</del> ` : ''}<ins>${esc(fmtVal(k, b)) || '(leer)'}</ins></td></tr>`).join('')}</table>` : ''}
   </div></div>`).join('')}</div>` : '<div class="card empty">Noch keine Änderungen protokolliert.</div>';
 }
@@ -1774,4 +1797,4 @@ async function start() {
   }
 }
 window.addEventListener('hashchange', router);
-start();
+document.addEventListener("DOMContentLoaded", start);

@@ -468,3 +468,74 @@ body:has(.tree-page) .site-foot { display: none; }
 .t-p.placeholder { cursor: default; border: 0; }
 .t-p.placeholder b { color: var(--ink-3); font-style: italic; font-weight: 400; }
 @media (max-width: 720px) { .stem-sel { max-width: 100%; width: 100%; } }
+
+/* ---------- Protokoll ---------- */
+.log-head { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; flex-wrap: wrap; }
+
+/* ---------- Jubiläen ---------- */
+.mono.ring { font-family: var(--sym); font-size: 17px; background: var(--brick-soft); color: var(--brick); }
+.jub-ic { width: 36px; text-align: center; font-size: 20px; flex: none; }
+.jub-t { font: 600 15px var(--serif); display: block; }
+.bday-row .pill { vertical-align: 1px; margin-left: 4px; }
+
+/* ---------- Karte ---------- */
+.map-grid { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; align-items: start; }
+.map { height: 70vh; min-height: 420px; border-radius: var(--radius); border: 1px solid var(--line); box-shadow: var(--shadow); z-index: 0; }
+.map-side { max-height: 70vh; overflow: auto; }
+.place-list { list-style: none; margin: 0; padding: 0; }
+.place-list button { display: flex; justify-content: space-between; width: 100%; border: 0; background: none; padding: 7px 4px; border-bottom: 1px solid var(--line-2); cursor: pointer; text-align: left; font-size: 14px; }
+.place-list button:hover:not([disabled]) { background: var(--surface-2); }
+.place-list button[disabled] { color: var(--ink-3); cursor: default; }
+.place-list span { color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.map-pop { font: 13px/1.45 var(--sans); }
+.map-pop b { font: 600 15px var(--serif); display: block; margin-bottom: 4px; }
+.map-pop .pop-g { margin-top: 6px; }
+.map-pop small { display: block; text-transform: uppercase; letter-spacing: .08em; font-size: 10px; color: #78868D; }
+.map-pop .btn { margin-top: 8px; }
+.leaflet-container { font-family: var(--sans); }
+@media (max-width: 900px) { .map-grid { grid-template-columns: 1fr; } .map { height: 60vh; } .map-side { max-height: none; } }
+
+/* ---------- Poster ---------- */
+.poster-grid { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 16px; align-items: start; }
+.poster-opts { display: grid; gap: 12px; }
+.poster-prev { padding: 16px; background: var(--surface-2); }
+.paper { background: #fff; box-shadow: 0 2px 14px rgba(0,0,0,.18); max-height: 75vh; margin: 0 auto; padding: 1.5%; }
+#printHost { display: none; }
+@media (max-width: 900px) { .poster-grid { grid-template-columns: 1fr; } }
+@media print {
+  body.printing > *:not(#printHost) { display: none !important; }
+  body.printing #printHost { display: block !important; }
+  body.printing { background: #fff; }
+  .print-poster svg { display: block; }
+}
+.dl { font: 11pt/1.4 var(--serif); color: #000; }
+.dl h1 { font-size: 22pt; margin-bottom: 4pt; }
+.dl-sub { font-style: italic; margin: 0 0 12pt; }
+.dl-row { display: flex; gap: 8pt; padding-top: 3pt; padding-bottom: 3pt; border-bottom: .5pt solid #ddd; break-inside: avoid; }
+.dl-n { min-width: 46pt; color: #555; font-family: var(--sans); font-size: 9pt; padding-top: 2pt; }
+.dl-d { color: #555; font-size: 9.5pt; font-family: var(--sans); }
+.dl-p { font-size: 10pt; color: #333; margin-top: 1pt; }
+.dl-foot { font-size: 8pt; color: #777; margin-top: 12pt; font-family: var(--sans); }
+
+/* ---------- Einstellungen ---------- */
+.bk-ziel { margin-top: 12px; }
+.bk-ziel[hidden] { display: none; }
+.bk-status { margin-top: 12px; font-size: 14px; color: var(--ink-2); }
+select.input.sm, .input.sm { padding: 4px 8px; font-size: 13px; width: auto; }
+
+/* ---------- Dubletten ---------- */
+.dup { margin-bottom: 12px; }
+.dup-pair { display: grid; grid-template-columns: 1fr auto 1fr; gap: 12px; align-items: center; margin-bottom: 10px; }
+.dup-side .hint { margin-top: 6px; }
+.dup-vs { font: 600 22px var(--serif); color: var(--brick); }
+.diff.merge td { vertical-align: middle; }
+@media (max-width: 720px) { .dup-pair { grid-template-columns: 1fr; } .dup-vs { display: none; } }
+
+/* ---------- GEDCOM ---------- */
+.ged-sum .stats { margin-top: 6px; }
+.ged-m { border-top: 1px solid var(--line-2); padding: 10px 0; }
+.ged-head { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; align-items: center; }
+.ged-adds { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 6px 16px; }
+.ged-a { align-items: flex-start; padding: 6px 0; border-bottom: 1px solid var(--line-2); }
+.ged-a small { color: var(--ink-3); }
+.ged-un li { margin-bottom: 6px; }
