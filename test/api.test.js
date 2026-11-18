@@ -220,3 +220,30 @@ test('Kalender-Abo enthält Geburts- und Hochzeitstage', async () => {
   assert.match(ics, /Peter Muster/);
   assert.match(ics, /Hochzeitstag/);
 });
+
+test('Eltern über der Stammperson ergänzen', async () => {
+  const T = await startServer();
+  let d = (await T.req('GET', '/api/data')).data;
+  const otto = d.persons.find(p => p.kind === 'blood' && !p.parentId);
+  const sibs = d.persons.filter(p => p.parentId === otto.id).length;
+  const v = await T.req('POST', '/api/personen', { kind: 'parent', anchorId: otto.id, fields: { firstName: 'Wilhelm', lastName: otto.lastName, birth: '1870' } });
+  assert.equal(v.status, 200);
+  const m = await T.req('POST', '/api/personen', { kind: 'parent', anchorId: otto.id, fields: { firstName: 'Auguste', lastName: otto.lastName, marriage: '1899' } });
+  assert.equal(m.status, 200);
+  d = (await T.req('GET', '/api/data')).data;
+  const o2 = d.persons.find(p => p.id === otto.id);
+  const w = d.persons.find(p => p.id === v.data.person.id), a = d.persons.find(p => p.id === m.data.person.id);
+  assert.equal(w.kind, 'blood'); assert.equal(w.parentId, null);
+  assert.equal(o2.parentId, w.id); assert.equal(o2.otherParentId, a.id);
+  assert.equal(a.kind, 'partner'); assert.equal(a.partnerOf, w.id);
+  assert.equal(d.persons.filter(p => p.parentId === otto.id).length, sibs);
+  const third = await T.req('POST', '/api/personen', { kind: 'parent', anchorId: otto.id, fields: { firstName: 'Zuviel' } });
+  assert.equal(third.status, 400);
+  // Vorschlag aus der Familie
+  const s = await T.req('POST', '/api/vorschlaege', { type: 'parent', targetId: w.id, fields: { firstName: 'Heinrich', lastName: w.lastName }, author: 'Test' }, 'family');
+  assert.equal(s.status, 200);
+  const ok = await T.req('POST', `/api/vorschlaege/${s.data.id}/annehmen`, {});
+  assert.equal(ok.status, 200);
+  d = (await T.req('GET', '/api/data')).data;
+  assert.equal(d.persons.find(p => p.id === w.id).parentId, ok.data.personId);
+});

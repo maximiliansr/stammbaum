@@ -230,6 +230,31 @@ function createPerson({ kind, anchorId, fields, otherParentId, role, parentIds, 
   if (!anchor) throw new HttpError(400, 'Bezugsperson nicht gefunden');
   const p = Object.assign(emptyPerson(), fields);
   p.id = newId();
+  if (kind === 'parent') {
+    // Eltern einer Person der Blutslinie ergänzen – auch oberhalb der bisherigen Stammperson
+    if (anchor.kind !== 'blood') throw new HttpError(400, 'Eltern lassen sich hier nur bei Personen der Blutslinie ergänzen');
+    const cur = anchor.parentId ? store.byId.get(anchor.parentId) : null;
+    const now = new Date().toISOString();
+    if (!cur) {
+      // Neue Stammperson eine Generation höher; die bisherige wird ihr Kind
+      Object.assign(p, { kind: 'blood', parentId: null, otherParentId: null, order: anchor.order || 1, code: '', updatedAt: now });
+      anchor.parentId = p.id; anchor.otherParentId = null; anchor.order = 1; anchor.updatedAt = now;
+      store.doc.persons.push(p); store.save();
+      store.log({ who, action: 'Elternteil hinzugefügt (neue Stammperson)', personId: p.id, name: displayName(p), anchor: displayName(anchor) });
+      return p;
+    }
+    const other = anchor.otherParentId ? store.byId.get(anchor.otherParentId) : null;
+    if (other) throw new HttpError(400, 'Es sind bereits beide Eltern erfasst');
+    // Zweites Elternteil = Partner/in des vorhandenen Elternteils; Geschwister ohne zweites Elternteil bekommen es ebenfalls
+    const hadPartners = store.doc.persons.some(x => x.partnerOf === cur.id);
+    Object.assign(p, { kind: 'partner', partnerOf: cur.id, order: store.doc.persons.filter(x => x.partnerOf === cur.id).length + 1, updatedAt: now });
+    if (!p.code) p.code = nextCode(cur, 'partner');
+    store.doc.persons.push(p);
+    for (const x of store.doc.persons) if (x.kind === 'blood' && x.parentId === cur.id && !x.otherParentId && (x.id === anchor.id || !hadPartners)) { x.otherParentId = p.id; x.updatedAt = now; }
+    store.save();
+    store.log({ who, action: 'Elternteil hinzugefügt', personId: p.id, name: displayName(p), anchor: displayName(anchor) });
+    return p;
+  }
   if (kind === 'origin') {
     // Eltern/Geschwister von angeheirateten Partnern
     const partner = anchor.kind === 'origin' ? store.byId.get(anchor.originOf) : anchor;
@@ -392,7 +417,7 @@ route('GET', '/api/vorschlaege/([a-zA-Z0-9_-]+)/foto\\.jpg', 'admin', (ctx, m) =
 route('POST', '/api/vorschlaege', 'family', (ctx) => {
   const b = ctx.body || {};
   if (rateLimited('sugg:' + clientIp(ctx.req), 40, 36e5)) throw new HttpError(429, 'Zu viele Vorschläge in kurzer Zeit.');
-  const type = ['edit', 'child', 'partner', 'origin', 'remark', 'source'].includes(b.type) ? b.type : null;
+  const type = ['edit', 'child', 'partner', 'origin', 'parent', 'remark', 'source'].includes(b.type) ? b.type : null;
   if (!type) throw new HttpError(400, 'Unbekannte Art von Vorschlag');
   const target = store.byId.get(b.targetId);
   if (!target) throw new HttpError(400, 'Person nicht gefunden');
@@ -418,6 +443,7 @@ route('POST', '/api/vorschlaege', 'family', (ctx) => {
     structure: type === 'edit' && b.structure ? { parentId: clean(b.structure.parentId, 40) || null, otherParentId: clean(b.structure.otherParentId, 40) || null,
       parentIds: Array.isArray(b.structure.parentIds) ? b.structure.parentIds.map(x => clean(x, 40)).slice(0, 2) : undefined } : undefined,
   };
+  if (type === 'parent' && target.kind !== 'blood') throw new HttpError(400, 'Eltern nur bei Personen der Blutslinie');
   if (type === 'origin' && target.kind !== 'partner' && !(target.kind === 'origin' && ['parent', 'partnerOfParent', 'relative'].includes(target.role))) throw new HttpError(400, 'Herkunftsfamilie nur bei angeheirateten Partnern bzw. deren Angehörigen');
   if (type === 'source') {
     const f = decodeFile(b.file);
@@ -428,7 +454,7 @@ route('POST', '/api/vorschlaege', 'family', (ctx) => {
   if (b.photo) { fs.writeFileSync(store.pendingPath(s.id), decodeJpeg(b.photo)); s.hasPhoto = true; }
   store.suggestions.push(s);
   store.saveSuggestions();
-  const what = { edit: 'Änderung zu', child: 'Neues Kind bei', partner: 'Neue/r Partner/in bei', origin: 'Herkunftsfamilie von', remark: 'Hinweis zu', source: 'Neue Quelle zu' }[type];
+  const what = { edit: 'Änderung zu', child: 'Neues Kind bei', partner: 'Neue/r Partner/in bei', origin: 'Herkunftsfamilie von', parent: 'Elternteil von', remark: 'Hinweis zu', source: 'Neue Quelle zu' }[type];
   notify.send('vorschlag', `Vorschlag von ${author}`, `${what} ${displayName(target)}${s.message ? '\n„' + s.message.slice(0, 200) + '“' : ''}`, { tags: 'family', click: '/#/admin/vorschlaege' });
   return { ok: true, id: s.id };
 });
@@ -463,7 +489,7 @@ route('POST', '/api/vorschlaege/([a-zA-Z0-9_-]+)/(annehmen|ablehnen)', 'admin', 
       const extra = !s.structure ? {} : t && t.kind === 'origin' ? { parentIds: s.structure.parentIds } : { parentId: s.structure.parentId, otherParentId: s.structure.otherParentId };
       updatePerson(s.targetId, fields, who, extra);
     }
-    else if (s.type === 'child' || s.type === 'partner' || s.type === 'origin') {
+    else if (s.type === 'child' || s.type === 'partner' || s.type === 'origin' || s.type === 'parent') {
       personId = createPerson({ kind: s.type === 'child' ? 'child' : s.type, anchorId: s.targetId, fields, otherParentId: s.otherParentId, role: s.role, parentIds: s.parentIds, relation: s.relation }, who).id;
     } else if (s.type === 'source') {
       const src = Object.assign(sanitizeSource(Object.assign({}, s.source, (ctx.body || {}).source || {})), {
@@ -499,7 +525,7 @@ route('POST', '/api/personen', 'admin', (ctx) => {
   const b = ctx.body || {};
   const r = sanitizeFields(b.fields || {});
   if (r.errors.length) throw new HttpError(400, r.errors.join(' · '));
-  const kind = ['partner', 'origin', 'root'].includes(b.kind) ? b.kind : 'child';
+  const kind = ['partner', 'origin', 'root', 'parent'].includes(b.kind) ? b.kind : 'child';
   const p = createPerson({ kind, anchorId: b.anchorId, fields: r.fields, otherParentId: b.otherParentId, role: b.role, parentIds: b.parentIds, relation: b.relation }, 'Admin');
   return { person: p };
 });

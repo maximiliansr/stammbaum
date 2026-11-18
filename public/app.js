@@ -816,6 +816,7 @@ function personHtml(p, compact) {
       ${p.kind === 'origin' && ['parent', 'partnerOfParent', 'relative'].includes(p.role) ? '<button class="btn" data-pa="origin-sib">+ Geschwister</button>' : ''}
       ${p.kind === 'origin' && p.role === 'sibling' ? '<button class="btn" data-pa="origin-sib2">+ Geschwister</button>' : ''}
       ${p.kind === 'blood' ? '<button class="btn" data-pa="partner">+ Partner/in</button>' : ''}
+      ${p.kind === 'blood' && (!S.byId.has(p.parentId) || !S.byId.has(p.otherParentId)) ? '<button class="btn" data-pa="parent">+ Elternteil</button>' : ''}
       <button class="btn" data-pa="source">+ Quelle</button>
       <a class="btn ghost" href="#/interview/${esc(p.id)}">Lücken füllen</a>
       ${!isAdmin() ? '<button class="btn ghost" data-pa="remark">Hinweis senden</button>' : ''}
@@ -850,6 +851,7 @@ function bindPersonActions(root, p) {
     if (a === 'edit') openPersonForm({ mode: 'edit', person: p });
     if (a === 'child') openPersonForm({ mode: 'child', anchor: p });
     if (a === 'partner') openPersonForm({ mode: 'partner', anchor: p });
+    if (a === 'parent') openPersonForm({ mode: 'parent', anchor: p });
     if (a === 'remark') openRemarkForm(p);
     if (a === 'origin-parent') openPersonForm({ mode: 'origin', anchor: p, role: 'parent' });
     if (a === 'origin-sibling') openPersonForm({ mode: 'origin', anchor: p, role: 'sibling' });
@@ -901,9 +903,12 @@ function openPersonForm({ mode, person, anchor, role, relation }) {
   const p = mode === 'edit' ? person : {
     firstName: '', lastName: mode === 'child' && anchor ? (anchor.kind === 'partner' ? S.byId.get(anchor.partnerOf)?.lastName : anchor.lastName) || '' : '',
     birthName: '', sex: '', birth: '', birthPlace: '', death: '', deathPlace: '', marriage: '', divorced: false,
-    street: '', zip: '', city: '', notes: '', custom: [], kind: mode === 'partner' ? 'partner' : mode === 'origin' ? 'origin' : 'blood',
+    street: '', zip: '', city: '', notes: '', custom: [], kind: mode === 'partner' || (mode === 'parent' && S.byId.has(anchor.parentId)) ? 'partner' : mode === 'origin' ? 'origin' : 'blood',
     role: role || 'parent',
   };
+  const upParent = mode === 'parent' ? S.byId.get(anchor.parentId) : null;
+  if (mode === 'parent' && !upParent) p.lastName = anchor.birthName || anchor.lastName || '';
+  if (mode === 'parent' && upParent) p.lastName = upParent.lastName || '';
   if (mode === 'origin' && role === 'parent') p.lastName = anchor.birthName || anchor.lastName || '';
   if (mode === 'origin' && role === 'sibling') p.birthName = anchor.kind === 'origin' ? '' : anchor.birthName || '';
   if (mode === 'origin' && role === 'sibling' && anchor.kind === 'origin') p.lastName = anchor.lastName || '';
@@ -915,6 +920,7 @@ function openPersonForm({ mode, person, anchor, role, relation }) {
   const title = mode === 'edit' ? (admin ? `${fullName(p)} bearbeiten` : `Änderung zu ${fullName(p)} vorschlagen`)
     : mode === 'child' ? `Kind von ${fullName(anchor)} ${admin ? 'hinzufügen' : 'vorschlagen'}`
     : mode === 'root' ? 'Stammvater/-mutter anlegen'
+    : mode === 'parent' ? `${upParent ? 'Zweites Elternteil' : 'Elternteil'} von ${fullName(anchor)} ${admin ? 'hinzufügen' : 'vorschlagen'}`
     : mode === 'origin' && role === 'relative' ? `${relation === 'parent' ? 'Elternteil' : 'Geschwister'} von ${fullName(anchor)} ${admin ? 'hinzufügen' : 'vorschlagen'}`
     : mode === 'origin' && anchor.kind === 'origin' ? `${role === 'partnerOfParent' ? 'Partner/in' : 'Kind'} von ${fullName(anchor)} ${admin ? 'hinzufügen' : 'vorschlagen'}`
     : mode === 'origin' ? `${role === 'child' ? 'Kind' : ROLE_TXT[role] || 'Elternteil'} von ${fullName(anchor)}${role === 'child' ? ' aus anderer Beziehung' : ''} ${admin ? 'hinzufügen' : 'vorschlagen'}`
@@ -923,7 +929,9 @@ function openPersonForm({ mode, person, anchor, role, relation }) {
   const dateInp = (k, label) => inp(k, label, `placeholder="TT.MM.JJJJ" inputmode="decimal" data-date`);
   const dlg = dialog(`<form method="dialog" id="pf">
     <div class="dlg-head"><h2>${esc(title)}</h2><p>${admin ? 'Änderungen werden sofort gespeichert und protokolliert.' : 'Dein Vorschlag geht an die Verwaltung und erscheint nach Prüfung im Stammbaum.'}</p></div>
-    <div class="dlg-body"><div class="form-grid">
+    <div class="dlg-body">${mode === 'parent' ? `<div class="hint" style="margin-bottom:12px">${upParent
+      ? `Wird als Partner/in von <b>${esc(fullName(upParent))}</b> und zweites Elternteil von ${esc(fullName(anchor))} eingetragen.`
+      : `Die neue Person wird Elternteil von ${esc(fullName(anchor))}${!anchor.parentId || !S.byId.has(anchor.parentId) ? ' – der Stammbaum beginnt dann eine Generation früher' : ''}. Das zweite Elternteil kannst du danach ergänzen.`}</div>` : ''}<div class="form-grid">
       ${inp('firstName', 'Vorname(n)', 'autofocus')}${inp('lastName', 'Nachname')}
       ${inp('birthName', 'Geburtsname')}
       <label class="fld"><span>Geschlecht</span><select class="input" name="sex">
@@ -1648,7 +1656,7 @@ async function adminSuggestions(at) {
   const list = await api('GET', '/api/vorschlaege');
   const open = list.filter(s => s.status === 'offen'), done = list.filter(s => s.status !== 'offen');
   S.openSugg = open.length;
-  const typeTxt = { edit: 'Änderung', child: 'Neues Kind', partner: 'Neue/r Partner/in', remark: 'Hinweis', source: 'Neue Quelle', origin: 'Herkunftsfamilie' };
+  const typeTxt = { edit: 'Änderung', child: 'Neues Kind', parent: 'Neues Elternteil', partner: 'Neue/r Partner/in', remark: 'Hinweis', source: 'Neue Quelle', origin: 'Herkunftsfamilie' };
   const card = (s) => {
     const t = S.byId.get(s.targetId);
     let body = '';
