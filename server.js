@@ -644,7 +644,7 @@ route('GET', '/api/export\\.json', 'admin', (ctx) => {
 });
 
 route('GET', '/api/export\\.csv', 'admin', (ctx) => {
-  const cols = [['code', 'Kennung'], ['kind', 'Art'], ['firstName', 'Vorname'], ['lastName', 'Nachname'], ['birthName', 'Geburtsname'],
+  const cols = [['code', 'Kennung'], ['kind', 'Art'], ['firstName', 'Vorname'], ['callName', 'Rufname'], ['lastName', 'Nachname'], ['birthName', 'Geburtsname'],
     ['sex', 'Geschlecht'], ['birth', 'Geburtsdatum'], ['birthPlace', 'Geburtsort'], ['marriage', 'Heirat'], ['death', 'Gestorben'],
     ['deathPlace', 'Sterbeort'], ['street', 'Straße'], ['zip', 'PLZ'], ['city', 'Wohnort'], ['rel', 'Bezug'], ['notes', 'Notizen']];
   const esc = (v) => { const s = String(v ?? ''); return /[;"\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };

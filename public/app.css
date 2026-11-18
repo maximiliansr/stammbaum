@@ -564,3 +564,15 @@ select.input.sm, .input.sm { padding: 4px 8px; font-size: 13px; width: auto; }
 .t-kids > .t-node.grp-start::before { top: 48px; }
 .t-kids > .t-node.grp-start:last-child::after { height: 48px; }
 .tree-legend { display: flex; gap: 12px; align-items: center; font-size: 12px; color: var(--ink-3); }
+
+/* ---------- Rufname ---------- */
+u.ruf { text-decoration: underline; text-decoration-thickness: 1.5px; text-underline-offset: 3px; text-decoration-color: currentColor; }
+.ruf-pick > span { display: block; }
+.ruf-opts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.ruf-opt { position: relative; cursor: pointer; }
+.ruf-opt input { position: absolute; opacity: 0; pointer-events: none; }
+.ruf-opt span { display: inline-block; padding: 5px 12px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); font-size: 14px; }
+.ruf-opt.none span { color: var(--ink-3); font-size: 13px; }
+.ruf-opt input:checked + span { border-color: var(--weser); background: var(--weser-soft); color: var(--weser); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+.ruf-opt.none input:checked + span { text-decoration: none; }
+.ruf-opt input:focus-visible + span { outline: 2px solid var(--weser); outline-offset: 2px; }

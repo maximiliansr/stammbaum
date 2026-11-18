@@ -247,3 +247,26 @@ test('Eltern über der Stammperson ergänzen', async () => {
   d = (await T.req('GET', '/api/data')).data;
   assert.equal(d.persons.find(p => p.id === w.id).parentId, ok.data.personId);
 });
+
+test('Rufname: nur einer der Vornamen, im GEDCOM erhalten', async () => {
+  const T = await startServer();
+  let d = (await T.req('GET', '/api/data')).data;
+  const otto = d.persons.find(p => p.firstName === 'Otto');
+  let r = await T.req('PATCH', `/api/personen/${otto.id}`, { fields: { firstName: 'Arthur Otto Walter', callName: 'otto' } });
+  assert.equal(r.status, 200);
+  assert.equal(r.data.person.callName, 'Otto');
+  r = await T.req('PATCH', `/api/personen/${otto.id}`, { fields: { callName: 'Karl' } });
+  assert.equal(r.data.person.callName, '');
+  await T.req('PATCH', `/api/personen/${otto.id}`, { fields: { callName: 'Walter' } });
+  const exp = await T.req('GET', '/api/export.ged');
+  assert.match(exp.data, /2 GIVN Arthur Otto Walter\r?\n2 _RUFNAME Walter/);
+  // Import mit Stern-Markierung
+  const ged = '0 HEAD\n1 CHAR UTF-8\n0 @I1@ INDI\n1 NAME Hans* Peter /Neu/\n1 SEX M\n1 BIRT\n2 DATE 1950\n0 TRLR\n';
+  const E = await startServer({ BEISPIELDATEN: 'nein' });
+  const plan = await E.req('POST', '/api/gedcom/vorschau', { text: ged });
+  const res = await E.req('POST', '/api/gedcom/uebernehmen', { token: plan.data.token, adds: plan.data.adds.map(a => a.key), updates: [] });
+  assert.equal(res.status, 200);
+  d = (await E.req('GET', '/api/data')).data;
+  const hans = d.persons.find(p => p.lastName === 'Neu');
+  assert.equal(hans.firstName, 'Hans Peter'); assert.equal(hans.callName, 'Hans');
+});

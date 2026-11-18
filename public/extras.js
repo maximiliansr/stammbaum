@@ -46,7 +46,7 @@ function memorialRow(m) {
   return `<a class="bday-row mem${m.inDays === 0 ? ' today' : ''}" href="#/p/${esc(m.p.id)}">
     <div class="bday-date"><b>${m.next.getDate()}</b><span>${MON3[m.next.getMonth()]}</span></div>
     ${avatar(m.p)}
-    <div class="who">${esc(fullName(m.p))} <span class="kind-tag mem">† ${m.years}. Todestag</span><small>${esc([lifespan(m.p), rel].filter(Boolean).join(' · '))}</small></div>
+    <div class="who">${nameHtml(m.p)} <span class="kind-tag mem">† ${m.years}. Todestag</span><small>${esc([lifespan(m.p), rel].filter(Boolean).join(' · '))}</small></div>
     <span class="when">${whenText(m.inDays)}</span></a>`;
 }
 // Alle Gedenktage gemischt: Geburtstage, Hochzeitstage, Todestage
@@ -56,7 +56,7 @@ function upcomingDays(days, { weddings = true, deaths = true } = {}) {
 }
 
 function coupleName(a, b) {
-  return a.lastName && a.lastName === b.lastName ? `${a.firstName.split(' ')[0]} & ${b.firstName.split(' ')[0]} ${a.lastName}` : `${fullName(a)} & ${fullName(b)}`;
+  return a.lastName && a.lastName === b.lastName ? `${callName(a)} & ${callName(b)} ${a.lastName}` : `${fullName(a)} & ${fullName(b)}`;
 }
 function weddingRow(w) {
   const special = WEDDING_NAMES[w.years];
@@ -273,7 +273,7 @@ function descendantList(opt) {
   const walk = (u, num, depth) => {
     if (depth >= opt.maxGen) return;
     const p = u.main;
-    const who = p ? `<b>${esc(fullName(p))}</b>${p.birthName ? ' geb. ' + esc(p.birthName) : ''} <span class="dl-d">${esc([p.birth && '* ' + p.birth + (p.birthPlace ? ' in ' + p.birthPlace : ''), p.death && '† ' + p.death].filter(Boolean).join('  '))}</span>` : `<i>${esc(u.placeholder || '')}</i>`;
+    const who = p ? `<b>${nameHtml(p)}</b>${p.birthName ? ' geb. ' + esc(p.birthName) : ''} <span class="dl-d">${esc([p.birth && '* ' + p.birth + (p.birthPlace ? ' in ' + p.birthPlace : ''), p.death && '† ' + p.death].filter(Boolean).join('  '))}</span>` : `<i>${esc(u.placeholder || '')}</i>`;
     const parts = (u.partners || []).map(s => `${s.divorced ? '⚮' : '⚭'}${s.marriage ? ' ' + esc(s.marriage) : ''} ${esc(fullName(s))}${s.birthName ? ' geb. ' + esc(s.birthName) : ''} <span class="dl-d">${esc(lifespan(s))}</span>`).join('<br>');
     rows.push(`<div class="dl-row" style="padding-left:${depth * 18}px"><span class="dl-n">${num}</span><div>${who}${parts ? `<div class="dl-p">${parts}</div>` : ''}</div></div>`);
     (u.kids || []).forEach((k, i) => walk(k, `${num}.${i + 1}`, depth + 1));
@@ -430,7 +430,7 @@ async function adminSettings(at) {
 }
 
 // ================= Verwaltung: Dubletten =================
-const MERGE_FIELDS = ['firstName', 'lastName', 'birthName', 'sex', 'birth', 'birthPlace', 'death', 'deathPlace', 'street', 'zip', 'city', 'notes'];
+const MERGE_FIELDS = ['firstName', 'callName', 'lastName', 'birthName', 'sex', 'birth', 'birthPlace', 'death', 'deathPlace', 'street', 'zip', 'city', 'notes'];
 async function adminDupes(at) {
   await loadData();
   const list = await api('GET', '/api/dubletten');
