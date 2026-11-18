@@ -303,3 +303,28 @@ test('GEDCOM: Taufe, Beerdigung, Konfession, Heiratsort, Adoption und ungefähre
   const zip = await fetch(T.base + '/api/export-medien.zip', { headers: { Cookie: '' } });
   assert.equal(zip.status, 401);
 });
+
+test('Herkunftsfamilie: Partnerin eines Elternteils wird Mutter (GEDCOM und von Hand)', async () => {
+  const T = await startServer();
+  let d = (await T.req('GET', '/api/data')).data;
+  const sab = d.persons.find(p => p.firstName === 'Sabine');
+  const hans = (await T.req('POST', '/api/personen', { kind: 'origin', role: 'parent', anchorId: sab.id, fields: { firstName: 'Hans', lastName: 'Wolff', sex: 'm', birth: '12.03.1930', birthPlace: 'Kiel' } })).data.person;
+  const ged = ['0 HEAD', '1 CHAR UTF-8',
+    '0 @I1@ INDI', '1 NAME Peter /Muster/', '1 SEX M', '1 FAMS @F1@',
+    '0 @I2@ INDI', '1 NAME Sabine /Wolff/', '1 SEX F', '1 BIRT', '2 DATE 1958', '1 FAMS @F1@', '1 FAMC @F2@',
+    '0 @I3@ INDI', '1 NAME Hans /Wolff/', '1 SEX M', '1 BIRT', '2 DATE 12 MAR 1930', '2 PLAC Kiel', '1 FAMS @F2@',
+    '0 @I4@ INDI', '1 NAME Gerda /Wolff/', '1 SEX F', '1 BIRT', '2 DATE 1932', '1 FAMS @F2@',
+    '0 @F1@ FAM', '1 HUSB @I1@', '1 WIFE @I2@',
+    '0 @F2@ FAM', '1 HUSB @I3@', '1 WIFE @I4@', '1 CHIL @I2@', '0 TRLR'].join('\n');
+  const plan = await T.req('POST', '/api/gedcom/vorschau', { text: ged });
+  const gerda = plan.data.adds.find(a => a.name === 'Gerda Wolff');
+  assert.ok(gerda, JSON.stringify(plan.data.adds.map(a => a.name)));
+  assert.equal(gerda.role, 'parent');
+  // von Hand: Partnerin von Hans → Mutter
+  const pop = (await T.req('POST', '/api/personen', { kind: 'origin', role: 'partnerOfParent', anchorId: hans.id, fields: { firstName: 'Erna', lastName: 'Wolff', sex: 'w' } })).data.person;
+  const r = await T.req('PATCH', `/api/personen/${pop.id}`, { fields: {}, role: 'parent' });
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  assert.equal(r.data.person.role, 'parent'); assert.equal(r.data.person.partnerOfId, null);
+  const third = (await T.req('POST', '/api/personen', { kind: 'origin', role: 'partnerOfParent', anchorId: hans.id, fields: { firstName: 'Zweite', lastName: 'Frau' } })).data.person;
+  assert.equal((await T.req('PATCH', `/api/personen/${third.id}`, { fields: {}, role: 'parent' })).status, 400);
+});

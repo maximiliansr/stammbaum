@@ -351,6 +351,18 @@ function updatePerson(id, fields, who, extra = {}) {
     p.partnerOf = t.id;
   }
   if (extra.role !== undefined && p.kind === 'origin' && ROLES.includes(extra.role) && extra.role !== p.role) {
+    const parents = store.doc.persons.filter(x => x.originOf === p.originOf && x.role === 'parent' && x.id !== p.id);
+    if (extra.role === 'parent') {
+      if (parents.length >= 2) throw new HttpError(400, 'Es sind bereits zwei Eltern erfasst');
+      if (p.partnerOfId) { changes.partnerOfId = [p.partnerOfId, null]; p.partnerOfId = null; }
+      // Geschwister, die nun Kinder beider Eltern sind, gelten als volle Geschwister
+      const both = [...parents.map(x => x.id), p.id].sort().join();
+      for (const x of store.doc.persons) if (x.originOf === p.originOf && x.role === 'sibling' && (x.parentIds || []).length === 2 && x.parentIds.slice().sort().join() === both) x.parentIds = [];
+    }
+    if (extra.role === 'partnerOfParent') {
+      if (parents.length !== 1) throw new HttpError(400, 'Partner/in eines Elternteils geht nur, wenn genau ein anderes Elternteil erfasst ist');
+      p.partnerOfId = parents[0].id;
+    }
     changes.role = [p.role, extra.role]; p.role = extra.role;
   }
   if (extra.parentIds !== undefined && p.kind === 'origin' && p.role === 'sibling') {
@@ -560,7 +572,8 @@ route('PATCH', '/api/personen/([a-zA-Z0-9_-]+)', 'admin', (ctx, m) => {
   if (!target) throw new HttpError(404, 'Person nicht gefunden');
   const r = sanitizeFields(Object.assign({}, (ctx.body || {}).fields, { __legacy: target }), { partial: true });
   if (r.errors.length) throw new HttpError(400, r.errors.join(' · '));
-  const extra = (ctx.body || {}).otherParentId !== undefined ? { otherParentId: (ctx.body || {}).otherParentId } : {};
+  const extra = {};
+  for (const k of ['otherParentId', 'role']) if ((ctx.body || {})[k] !== undefined) extra[k] = ctx.body[k];
   return { person: updatePerson(m[1], r.fields, (ctx.body || {}).who || 'Admin', extra).person };
 });
 

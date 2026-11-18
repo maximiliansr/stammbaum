@@ -881,6 +881,7 @@ function personHtml(p, compact) {
       ${p.kind === 'origin' && ['parent', 'partnerOfParent', 'relative'].includes(p.role) && parentsOf(p).length < 2 ? '<button class="btn" data-pa="origin-up">+ Elternteil</button>' : ''}
       ${p.kind === 'origin' && ['parent', 'partnerOfParent', 'relative'].includes(p.role) ? '<button class="btn" data-pa="origin-sib">+ Geschwister</button>' : ''}
       ${p.kind === 'origin' && p.role === 'sibling' ? '<button class="btn" data-pa="origin-sib2">+ Geschwister</button>' : ''}
+      ${p.kind === 'origin' && p.role === 'partnerOfParent' && isAdmin() && originParents(p.originOf).length < 2 ? `<button class="btn" data-pa="make-parent">Ist ${G(p.sex, 'Vater', 'Mutter', 'Elternteil')} von ${esc(callName(S.byId.get(p.originOf)))}</button>` : ''}
       ${p.kind === 'blood' ? '<button class="btn" data-pa="partner">+ Partner/in</button>' : ''}
       ${p.kind === 'blood' && (!S.byId.has(p.parentId) || !S.byId.has(p.otherParentId)) ? '<button class="btn" data-pa="parent">+ Elternteil</button>' : ''}
       ${p.kind === 'partner' && originParents(p.id).length < 2 ? '<button class="btn" data-pa="origin-parent">+ Elternteil</button>' : ''}
@@ -913,6 +914,10 @@ function personHtml(p, compact) {
   </article>`;
 }
 
+async function makeOriginParent(p) {
+  try { await api('PATCH', `/api/personen/${p.id}`, { fields: {}, role: 'parent' }); toast('Als Elternteil eingetragen'); await refresh(); }
+  catch (err) { toast(err.message, true); }
+}
 function bindPersonActions(root, p) {
   root.querySelectorAll('[data-pa]').forEach(b => b.addEventListener('click', () => {
     const a = b.dataset.pa;
@@ -930,6 +935,7 @@ function bindPersonActions(root, p) {
     if (a === 'origin-sib') openPersonForm({ mode: 'origin', anchor: p, role: 'relative', relation: 'sibling' });
     if (a === 'origin-sib2') openPersonForm({ mode: 'origin', anchor: S.byId.get(p.originOf), role: 'sibling' });
     if (a === 'source') openSourceForm({ person: p });
+    if (a === 'make-parent') makeOriginParent(p);
   }));
   root.querySelectorAll('[data-src]').forEach(b => b.addEventListener('click', () => openSourceViewer(b.dataset.src)));
   const host = root.querySelector('.tl-host');
@@ -1030,6 +1036,11 @@ function openPersonForm({ mode, person, anchor, role, relation }) {
       <p class="hint full" style="margin:-4px 0 0">Ungefähre Daten gehen auch: „ca. 1900“, „vor 1850“, „nach 1920“, „zw. 1920 und 1925“.</p>
       ${p.kind === 'origin' && (p.role === 'sibling') && (mode === 'edit' || anchor) ? originParentSelect(mode === 'edit' ? p.originOf : (anchor.kind === 'origin' ? anchor.originOf : anchor.id), mode === 'edit' ? p.parentIds : null, mode !== 'edit' && anchor.kind === 'origin' ? anchor.id : null) : ''}
       ${p.kind === 'origin' && (mode === 'origin' && anchor.kind === 'origin') ? `<input type="hidden" name="role" value="${esc(role)}">` : ''}
+      ${mode === 'edit' && p.kind === 'origin' && p.role === 'partnerOfParent' && isAdmin() ? (() => {
+        const P = S.byId.get(p.originOf), X = S.byId.get(p.partnerOfId);
+        const can = originParents(p.originOf).filter(x => x.id !== p.id).length < 2;
+        return `<label class="fld full"><span>Beziehung</span><select class="input" name="role"><option value="partnerOfParent" selected>Partner/in von ${esc(fullName(X))} – nicht Elternteil von ${esc(callName(P))}</option>${can ? `<option value="parent">${G(p.sex, 'Vater', 'Mutter', 'Elternteil')} von ${esc(fullName(P))}</option>` : ''}</select></label>`;
+      })() : ''}
       ${p.kind === 'origin' && !['partnerOfParent', 'relative'].includes(p.role) && !(mode === 'origin' && anchor.kind === 'origin') ? `<label class="fld full"><span>Beziehung zu ${esc(fullName(mode === 'edit' ? S.byId.get(p.originOf) : anchor))}</span><select class="input" name="role">${[['parent', 'Elternteil (Vater/Mutter)'], ['sibling', 'Geschwister (Bruder/Schwester)'], ['child', 'Kind aus anderer Beziehung']].map(([v, t]) => `<option value="${v}"${(p.role || 'parent') === v ? ' selected' : ''}>${t}</option>`).join('')}</select></label>` : ''}
       ${coParents.length ? `<label class="fld full"><span>Zweites Elternteil</span><select class="input" name="otherParentId">${coParents.map(c => `<option value="${esc(c.id)}"${c === guessOtherParent(coParents, '') ? ' selected' : ''}>gemeinsames Kind mit ${esc(fullName(c))}</option>`).join('')}<option value="none">– anderer oder unbekannter Elternteil –</option></select></label>` : ''}
       ${mode === 'edit' && p.kind === 'blood' ? parentFieldsHtml(p) : ''}
@@ -1904,11 +1915,19 @@ function adminChecks(at) {
     const why = !cur ? 'kein zweites Elternteil' : impossible ? `${callName(cur)} † ${dc}, Kind * ${by}` : `eingetragen: ${callName(cur)}`;
     opItems.push(link(k, `${by ? '* ' + by + ', ' : ''}${why}`) + (g && (!cur || g.id !== cur.id) ? ` <button class="btn sm" data-fixop="${esc(k.id)}:${esc(g.id)}">${g.sex === 'w' ? 'Mutter' : g.sex === 'm' ? 'Vater' : 'Elternteil'}: ${esc(fullName(g))}</button>` : ''));
   }
+  add('Partner/in eines Elternteils – vielleicht das zweite Elternteil?', S.persons.filter(o => o.kind === 'origin' && o.role === 'partnerOfParent' && originParents(o.originOf).length === 1)
+    .map(o => link(o, `Partner/in von ${fullName(S.byId.get(o.partnerOfId))}, bei ${fullName(S.byId.get(o.originOf))} ist nur ein Elternteil erfasst`) + ` <button class="btn sm" data-mkpar="${esc(o.id)}">Ist ${G(o.sex, 'Vater', 'Mutter', 'Elternteil')} von ${esc(callName(S.byId.get(o.originOf)))}</button>`),
+    'Kommt oft vom GEDCOM-Import: Die Person ist als weitere Partnerin bzw. weiterer Partner eingetragen statt als Mutter/Vater.');
   add('Zweites Elternteil prüfen', opItems, 'Bei mehreren Partnern: Kinder sind evtl. dem falschen Elternteil zugeordnet (z. B. nach Tod der ersten Ehefrau geboren). Vorschlag per Knopf übernehmen oder auf der Personenseite unter „Bearbeiten“ ändern.');
   add('Geschlecht unbekannt', S.persons.filter(p => !p.sex).map(p => link(p)), 'Wird für Begriffe wie „Tante“ statt „Onkel/Tante“ gebraucht. Beim Einlesen wurde es aus dem Vornamen geschätzt – bitte stichprobenartig prüfen.');
   const total = groups.reduce((n, g) => n + g.items.length, 0);
   at.innerHTML = `<p class="muted">${total} Auffälligkeiten – nichts davon ist ein Fehler im Programm, nur Hinweise zur Datenpflege.</p>
     ${groups.filter(g => g.items.length).map(g => `<div class="card check-group"><h3>${esc(g.title)} <span class="pill">${g.items.length}</span></h3>${g.hint ? `<p class="hint" style="margin:0 0 8px">${esc(g.hint)}</p>` : ''}<ul class="check-list">${g.items.map(i => `<li>${i}</li>`).join('')}</ul></div>`).join('')}`;
+  at.querySelectorAll('[data-mkpar]').forEach(b => b.addEventListener('click', async () => {
+    b.disabled = true;
+    try { await api('PATCH', `/api/personen/${b.dataset.mkpar}`, { fields: {}, role: 'parent' }); toast('Als Elternteil eingetragen'); await loadData(); adminChecks(at); }
+    catch (err) { toast(err.message, true); b.disabled = false; }
+  }));
   at.querySelectorAll('[data-fixop]').forEach(b => b.addEventListener('click', async () => {
     const [kid, op] = b.dataset.fixop.split(':');
     b.disabled = true;
