@@ -578,3 +578,16 @@ u.ruf { text-decoration: underline; text-decoration-thickness: 1.5px; text-under
 .ruf-opt input:focus-visible + span { outline: 2px solid var(--weser); outline-offset: 2px; }
 
 .seg { flex-wrap: wrap; max-width: 100%; }
+
+/* ---------- Belege an Angaben ---------- */
+.fact-src { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-left: 8px; vertical-align: 1px; }
+.src-pill, .src-add { font: 500 11.5px/1 var(--sans); border-radius: 10px; padding: 3px 8px; cursor: pointer; white-space: nowrap; }
+.src-pill { border: 1px solid var(--line); background: var(--weser-soft); color: var(--weser); }
+.src-pill:hover { border-color: var(--weser); }
+.src-add { border: 1px dashed var(--line); background: none; color: var(--ink-3); opacity: .55; transition: opacity .15s; }
+.facts dd:hover .src-add, .src-add:focus-visible { opacity: 1; }
+.src-add:hover { color: var(--weser); border-color: var(--weser); }
+@media (hover: none) { .src-add { opacity: 1; } }
+.fact-opts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.fact-opts .ruf-opt input:checked + span { text-decoration: none; }
+.drop.over { border-color: var(--weser); background: var(--weser-soft); }

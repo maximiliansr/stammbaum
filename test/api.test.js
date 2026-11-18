@@ -328,3 +328,19 @@ test('Herkunftsfamilie: Partnerin eines Elternteils wird Mutter (GEDCOM und von 
   const third = (await T.req('POST', '/api/personen', { kind: 'origin', role: 'partnerOfParent', anchorId: hans.id, fields: { firstName: 'Zweite', lastName: 'Frau' } })).data.person;
   assert.equal((await T.req('PATCH', `/api/personen/${third.id}`, { fields: {}, role: 'parent' })).status, 400);
 });
+
+test('Quellen belegen einzelne Angaben (auch im GEDCOM)', async () => {
+  const T = await startServer();
+  const d = (await T.req('GET', '/api/data')).data;
+  const peter = d.persons.find(p => p.firstName === 'Peter'), sab = d.persons.find(p => p.firstName === 'Sabine');
+  // kleinstes gültiges JPEG
+  const jpg = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=';
+  const r = await T.req('POST', '/api/quellen', { source: { title: 'Heiratsurkunde', kind: 'Heiratsurkunde', facts: ['marriage', 'quatsch'] }, personIds: [peter.id, sab.id], file: jpg });
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  assert.deepEqual(r.data.source.facts, ['marriage']);
+  const r2 = await T.req('POST', '/api/quellen', { source: { title: 'Geburtsurkunde Peter', kind: 'Geburtsurkunde', facts: ['birth'] }, personIds: [peter.id], file: jpg });
+  assert.equal(r2.status, 200);
+  const exp = (await T.req('GET', '/api/export.ged')).data;
+  assert.match(exp, /1 BIRT\r\n2 DATE [^\r]+\r\n(?:2 PLAC [^\r]+\r\n)?2 SOUR @S2@/);
+  assert.match(exp, /1 MARR\r\n2 DATE [^\r]+\r\n(?:2 PLAC [^\r]+\r\n)?2 SOUR @S1@/);
+});

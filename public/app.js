@@ -829,6 +829,7 @@ function openDrawer(id) {
   const d = $('#drawer'); if (!d) return;
   d.hidden = false;
   d.innerHTML = `<button class="btn sm ghost x" aria-label="Schließen" data-close>✕</button>${personHtml(S.byId.get(id), true)}`;
+  d.dataset.pid = id;
   bindPersonActions(d, S.byId.get(id));
   d.querySelector('[data-close]').onclick = () => { d.hidden = true; };
   history.replaceState(null, '', currentStem ? `#/stamm/${currentStem}/${id}` : '#/baum/' + id);
@@ -848,6 +849,8 @@ function personHtml(p, compact) {
   const rel = S.me && S.me !== p.id ? kinship(S.me, p.id) : null;
   const age = ageNow(p);
   const f = (label, v) => v ? `<dt>${label}</dt><dd>${esc(v)}</dd>` : '';
+  // Angabe mit Belegen: Quellen-Chips und „+ Beleg“
+  const ff = (label, v, fact, extra = '') => v ? `<dt>${label}</dt><dd>${esc(v)}${extra}${factSources(p, fact)}</dd>` : '';
   const born = [p.birth && '* ' + dateText(p.birth), p.birthPlace && 'in ' + p.birthPlace].filter(Boolean).join(' ');
   const died = [p.death && '† ' + dateText(p.death), p.deathPlace && 'in ' + p.deathPlace].filter(Boolean).join(' ');
   const baptized = [p.baptism && dateText(p.baptism), p.baptismPlace && 'in ' + p.baptismPlace].filter(Boolean).join(' ');
@@ -892,10 +895,10 @@ function personHtml(p, compact) {
       ${!isAdmin() ? '<button class="btn ghost" data-pa="remark">Hinweis senden</button>' : ''}
     </div>
     <section class="sec"><h3>Angaben</h3><dl class="facts">
-      ${f('Geboren', born)}${f('Getauft', baptized)}${f('Geburtsname', p.birthName)}${f('Konfession', p.religion)}
+      ${ff('Geboren', born, 'birth')}${ff('Getauft', baptized, 'baptism')}${f('Geburtsname', p.birthName)}${f('Konfession', p.religion)}
       ${pediTxt && p.kind === 'blood' ? f('Elternschaft', `${pediTxt} von ${parents.map(x => fullName(x)).join(' & ') || 'unbekannt'}`) : ''}
-      ${marriages.map(([who, rec]) => who ? `<dt>${rec.divorced ? 'Ehe (geschieden)' : 'Verheiratet'}</dt><dd>mit <a href="#/p/${esc(who.id)}">${nameHtml(who)}</a>${rec.marriage ? (/^\d/.test(rec.marriage) ? ' seit ' : ' ') + esc(dateText(rec.marriage)) : ''}${rec.marriagePlace ? ' in ' + esc(rec.marriagePlace) : ''}</dd>` : '').join('')}
-      ${f('Gestorben', died)}${f('Beerdigt', buried)}
+      ${marriages.map(([who, rec]) => who ? `<dt>${rec.divorced ? 'Ehe (geschieden)' : 'Verheiratet'}</dt><dd>mit <a href="#/p/${esc(who.id)}">${nameHtml(who)}</a>${rec.marriage ? (/^\d/.test(rec.marriage) ? ' seit ' : ' ') + esc(dateText(rec.marriage)) : ''}${rec.marriagePlace ? ' in ' + esc(rec.marriagePlace) : ''}${factSources(p, 'marriage', who)}</dd>` : '').join('')}
+      ${ff('Gestorben', died, 'death')}${ff('Beerdigt', buried, 'burial')}
       ${f(p.death ? 'Zuletzt wohnhaft' : 'Wohnort', address)}
       ${(p.custom || []).map(c => f(esc(c.label || 'Info'), c.value)).join('')}
       ${f('Notizen', p.notes)}
@@ -939,6 +942,10 @@ function bindPersonActions(root, p) {
     if (a === 'make-parent') makeOriginParent(p);
   }));
   root.querySelectorAll('[data-src]').forEach(b => b.addEventListener('click', () => openSourceViewer(b.dataset.src)));
+  root.querySelectorAll('[data-addsrc]').forEach(b => b.addEventListener('click', () => {
+    const spouse = b.dataset.spouse ? S.byId.get(b.dataset.spouse) : null;
+    openSourceForm({ person: p, fact: b.dataset.addsrc, extraIds: spouse ? [spouse.id] : [] });
+  }));
   const host = root.querySelector('.tl-host');
   if (host) host.addEventListener('click', (e) => {
     const t = e.target.closest('[data-tltab]'); if (!t) return;
@@ -1098,11 +1105,14 @@ function openPersonForm({ mode, person, anchor, role, relation }) {
   $('[data-cancel]', dlg).onclick = () => dlg.close();
   $('#addCustom', dlg).onclick = () => { $('#customRows', dlg).insertAdjacentHTML('beforeend', customRow({ label: '', value: '' })); };
   $('#customRows', dlg).addEventListener('click', (e) => { if (e.target.closest('[data-rmc]')) e.target.closest('.custom-row').remove(); });
-  $('#photoIn', dlg).onchange = async (e) => {
-    const file = e.target.files[0]; if (!file) return;
+  const takePhoto = async (file) => {
+    if (!file) return;
     try { photo = await resizePhoto(file); $('.photo-edit .mono', dlg).innerHTML = `<img src="${photo}" alt="">`; }
     catch (err) { toast(err.message, true); }
   };
+  $('#photoIn', dlg).onchange = (e) => takePhoto(e.target.files[0]);
+  // Foto aus der Zwischenablage einfügen
+  dlg.addEventListener('paste', (e) => { const f = clipboardImage(e); if (f && /^image\//.test(f.type)) { e.preventDefault(); takePhoto(f); toast('Foto eingefügt'); } });
   if (mode === 'edit' && p.kind !== 'origin') bindAdminStructure(dlg, p);
   if (admin && mode === 'edit') {
     $('#delPhoto', dlg)?.addEventListener('click', async () => {
@@ -1394,9 +1404,25 @@ function pathHtml(A, B, k) {
 }
 
 // ================= Quellen & Dokumente =================
+const FACT_TXT = { birth: 'Geburt', baptism: 'Taufe', marriage: 'Heirat', death: 'Tod', burial: 'Beerdigung' };
+// Quellen, die eine Angabe belegen – bei Heirat für beide Partner
+function sourcesFor(p, fact, spouse) {
+  return S.sources.filter(s => (s.facts || []).includes(fact) && (s.personIds || []).includes(p.id) && (!spouse || (s.personIds || []).includes(spouse.id)));
+}
+function factSources(p, fact, spouse) {
+  const list = sourcesFor(p, fact, spouse);
+  return `<span class="fact-src">${list.map(s => `<button type="button" class="src-pill" data-src="${esc(s.id)}" title="${esc(s.title)}">📎 ${esc(s.kind === 'Sonstiges' ? s.title : s.kind)}</button>`).join('')}<button type="button" class="src-add" data-addsrc="${esc(fact)}"${spouse ? ` data-spouse="${esc(spouse.id)}"` : ''} title="Beleg für ${esc(FACT_TXT[fact])} hinzufügen – Bild auch per Einfügen (⌘V / Strg+V)">＋ Beleg</button></span>`;
+}
 function sourceTile(s) {
   const thumb = s.hasThumb ? `<img src="/api/quellen/${esc(s.id)}/vorschau" alt="" loading="lazy">` : `<span class="src-doc">${s.mime === 'application/pdf' ? 'PDF' : 'Bild'}</span>`;
-  return `<button class="src-tile" data-src="${esc(s.id)}" title="${esc(s.title)}">${thumb}<span class="src-cap"><b>${esc(s.title)}</b><small>${esc([s.kind !== s.title ? s.kind : '', s.date].filter(Boolean).join(' · '))}</small></span></button>`;
+  return `<button class="src-tile" data-src="${esc(s.id)}" title="${esc(s.title)}">${thumb}<span class="src-cap"><b>${esc(s.title)}</b><small>${esc([s.kind !== s.title ? s.kind : '', s.date, (s.facts || []).map(f => FACT_TXT[f]).join(', ')].filter(Boolean).join(' · '))}</small></span></button>`;
+}
+function clipboardImage(e) {
+  const items = [...((e.clipboardData && e.clipboardData.items) || [])];
+  const it = items.find(i => i.kind === 'file' && /^image\/|^application\/pdf$/.test(i.type));
+  const f = it && it.getAsFile();
+  if (!f) return null;
+  return f.name && f.name !== 'image.png' ? f : new File([f], `Eingefügt ${new Date().toLocaleString('de-DE')}.${(f.type.split('/')[1] || 'png').replace('jpeg', 'jpg')}`, { type: f.type });
 }
 function resizeImage(file, max, q) {
   return new Promise((resolve, reject) => {
@@ -1418,17 +1444,19 @@ function personTagsHtml(ids) {
   return ids.map(id => S.byId.get(id)).filter(Boolean).map(p => `<span class="tag-chip" data-pid="${esc(p.id)}">${esc(fullName(p))}<button type="button" aria-label="Entfernen" data-rm="${esc(p.id)}">✕</button></span>`).join('');
 }
 
-function openSourceForm({ person, source }) {
+const FACT_KIND = { birth: 'Geburtsurkunde', baptism: 'Taufschein', marriage: 'Heiratsurkunde', death: 'Sterbeurkunde', burial: 'Traueranzeige' };
+function openSourceForm({ person, source, fact, extraIds = [], pasted }) {
   const admin = isAdmin();
   const edit = !!source;
-  const s = source || { title: '', kind: 'Traueranzeige', date: '', note: '', personIds: [person.id] };
+  const s = source || { title: '', kind: (fact && FACT_KIND[fact]) || 'Traueranzeige', date: '', note: '', personIds: [person.id, ...extraIds], facts: fact ? [fact] : [] };
   let ids = [...(s.personIds || [])];
   let file = null, thumb = null;
   const dlg = dialog(`<form id="sfm">
     <div class="dlg-head"><h2>${edit ? 'Quelle bearbeiten' : `Quelle zu ${esc(fullName(person))} ${admin ? 'hinzufügen' : 'einreichen'}`}</h2>
       <p>Foto oder Scan einer Traueranzeige, eines Stammbuchauszugs, einer Urkunde, eines alten Fotos … ${admin ? '' : 'Die Verwaltung prüft die Quelle, bevor sie sichtbar wird.'}</p></div>
     <div class="dlg-body"><div class="form-grid">
-      ${edit ? '' : `<div class="full"><label class="drop" id="drop"><input type="file" accept="image/*,application/pdf" id="srcFile" capture="environment"><span id="dropTxt"><b>Foto aufnehmen oder Datei wählen</b><br><small>JPG, PNG oder PDF · Bilder werden automatisch passend verkleinert</small></span></label></div>`}
+      ${edit ? '' : `<div class="full"><label class="drop" id="drop"><input type="file" accept="image/*,application/pdf" id="srcFile"><span id="dropTxt"><b>Bild einfügen (⌘V / Strg+V), hierher ziehen oder Datei wählen</b><br><small>JPG, PNG oder PDF · Bilder werden automatisch passend verkleinert</small></span></label></div>`}
+      <div class="fld full"><span>Belegt</span><div class="fact-opts">${Object.entries(FACT_TXT).map(([k, t]) => `<label class="ruf-opt"><input type="checkbox" name="facts" value="${k}"${(s.facts || []).includes(k) ? ' checked' : ''}><span>${t}</span></label>`).join('')}</div></div>
       <label class="fld"><span>Art</span><select class="input" name="kind">${S.sourceKinds.map(k => `<option${k === s.kind ? ' selected' : ''}>${esc(k)}</option>`).join('')}</select></label>
       <label class="fld"><span>Datum des Dokuments</span><input class="input" name="date" value="${esc(s.date)}" placeholder="TT.MM.JJJJ oder JJJJ" data-date></label>
       <label class="fld full"><span>Titel</span><input class="input" name="title" value="${esc(s.title)}" placeholder="z. B. Traueranzeige Weser-Kurier"></label>
@@ -1446,8 +1474,8 @@ function openSourceForm({ person, source }) {
     attachPicker($('#tagAdd', dlg), (x) => { if (!ids.includes(x.id)) ids.push(x.id); drawTags(); }, { keepText: false });
     $('#tagList', dlg).addEventListener('click', (e) => { const r = e.target.closest('[data-rm]'); if (r) { ids = ids.filter(i => i !== r.dataset.rm); drawTags(); } });
   }
-  $('#srcFile', dlg)?.addEventListener('change', async (e) => {
-    const f = e.target.files[0]; if (!f) return;
+  const takeFile = async (f) => {
+    if (!f) return;
     const txt = $('#dropTxt', dlg);
     try {
       if (f.type === 'application/pdf') {
@@ -1461,14 +1489,24 @@ function openSourceForm({ person, source }) {
       }
       const t = $('[name=title]', dlg); if (!t.value) t.placeholder = $('[name=kind]', dlg).value + ' ' + fullName(person);
     } catch (err) { file = null; txt.innerHTML = `<span class="err">${esc(err.message)}</span>`; }
-  });
+  };
+  if (!edit) {
+    $('#srcFile', dlg).addEventListener('change', (e) => takeFile(e.target.files[0]));
+    // Bild aus der Zwischenablage (überall im Dialog) oder per Ziehen
+    dlg.addEventListener('paste', (e) => { const f = clipboardImage(e); if (f) { e.preventDefault(); takeFile(f); } });
+    const drop = $('#drop', dlg);
+    drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('over'); });
+    drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+    drop.addEventListener('drop', (e) => { e.preventDefault(); drop.classList.remove('over'); takeFile(e.dataTransfer.files[0]); });
+    if (pasted) takeFile(pasted);
+  }
   $('#srcDel', dlg)?.addEventListener('click', async () => {
     if (!confirm('Diese Quelle samt Datei löschen?')) return;
     try { await api('DELETE', `/api/quellen/${s.id}`); dlg.close(); toast('Quelle gelöscht'); await refresh(); } catch (err) { $('#sfmErr', dlg).textContent = err.message; }
   });
   $('#sfm', dlg).onsubmit = async (e) => {
     e.preventDefault(); const fd = new FormData(e.target);
-    const meta = { kind: fd.get('kind'), date: normDate(fd.get('date')), title: (fd.get('title') || '').trim() || `${fd.get('kind')} ${fullName(person || S.byId.get(ids[0]))}`, note: fd.get('note') };
+    const meta = { facts: fd.getAll('facts'), kind: fd.get('kind'), date: normDate(fd.get('date')), title: (fd.get('title') || '').trim() || `${fd.get('kind')} ${fullName(person || S.byId.get(ids[0]))}`, note: fd.get('note') };
     if (!edit && !file) { $('#sfmErr', dlg).textContent = 'Bitte zuerst ein Foto oder eine Datei auswählen.'; return; }
     const btn = $('#sfmSave', dlg); btn.disabled = true; btn.textContent = 'Lädt hoch …';
     try {
@@ -1972,3 +2010,13 @@ async function start() {
 }
 window.addEventListener('hashchange', router);
 document.addEventListener("DOMContentLoaded", start);
+// Bild auf einer Personenseite einfügen → als Quelle hinzufügen
+document.addEventListener('paste', (e) => {
+  if (document.querySelector('dialog[open]')) return;
+  const dr = $('#drawer');
+  const m = /^#\/p\/([^/]+)/.exec(location.hash) || [null, dr && !dr.hidden ? dr.dataset.pid : null];
+  const p = m && S.byId.get(m[1]); if (!p) return;
+  const f = clipboardImage(e); if (!f) return;
+  e.preventDefault();
+  openSourceForm({ person: p, pasted: f });
+});
