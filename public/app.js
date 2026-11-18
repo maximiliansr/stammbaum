@@ -856,7 +856,7 @@ function personHtml(p, compact) {
   const address = [p.street, [p.zip, p.city].filter(Boolean).join(' ')].filter(Boolean).join(', ');
   const marriages = p.kind === 'partner' ? [[S.byId.get(p.partnerOf), p]] : partners.map(s => [s, s]);
   const gen = S.gen.get(p.id);
-  const parentNote = p.kind === 'partner' ? `<div class="hint">Eingeheiratet – Eltern und Geschwister von ${esc(callName(p) || 'ihr/ihm')} sind noch nicht erfasst.</div>` : '';
+  const parentNote = p.kind === 'partner' ? `<div class="hint">Eingeheiratet – Eltern und Geschwister von ${esc(callName(p) || 'ihr/ihm')} sind noch nicht erfasst. Oben über „+ Elternteil“ ergänzen.</div>` : '';
   const kindLabel = p.kind === 'partner' ? 'Partner/in' : p.kind === 'origin' ? 'Herkunftsfamilie von ' + esc(fullName(S.byId.get(p.originOf))) : 'Familie';
   const srcs = S.sources.filter(s => (s.personIds || []).includes(p.id));
   return `<article class="person">
@@ -883,6 +883,8 @@ function personHtml(p, compact) {
       ${p.kind === 'origin' && p.role === 'sibling' ? '<button class="btn" data-pa="origin-sib2">+ Geschwister</button>' : ''}
       ${p.kind === 'blood' ? '<button class="btn" data-pa="partner">+ Partner/in</button>' : ''}
       ${p.kind === 'blood' && (!S.byId.has(p.parentId) || !S.byId.has(p.otherParentId)) ? '<button class="btn" data-pa="parent">+ Elternteil</button>' : ''}
+      ${p.kind === 'partner' && originParents(p.id).length < 2 ? '<button class="btn" data-pa="origin-parent">+ Elternteil</button>' : ''}
+      ${p.kind === 'partner' ? '<button class="btn" data-pa="origin-sibling">+ Geschwister</button><button class="btn" data-pa="origin-child">+ Kind aus anderer Beziehung</button>' : ''}
       <button class="btn" data-pa="source">+ Quelle</button>
       <a class="btn ghost" href="#/interview/${esc(p.id)}">Lücken füllen</a>
       ${!isAdmin() ? '<button class="btn ghost" data-pa="remark">Hinweis senden</button>' : ''}
@@ -902,7 +904,6 @@ function personHtml(p, compact) {
       ${partners.length ? `<div class="kin-group"><div>${p.kind === 'partner' ? 'Partner/in' : 'Partner'}</div><div class="chips">${partners.map(x => chip(x, x.divorced ? 'geschieden' : '')).join('')}</div></div>` : ''}
       ${sibs.length ? `<div class="kin-group"><div>Geschwister (${sibs.length})</div><div class="chips">${sibs.map(x => chip(x)).join('')}</div></div>` : ''}
       ${kids.length ? `<div class="kin-group"><div>Kinder (${kids.length})</div><div class="chips">${kids.map(x => chip(x, x.kind === 'origin' ? 'aus anderer Beziehung' : p.kind === 'blood' && x.otherParentId && partners.length > 1 ? 'mit ' + (S.byId.get(x.otherParentId)?.firstName || '') : p.kind === 'blood' && !x.otherParentId && partners.length ? 'anderer Elternteil' : '')).join('')}</div></div>` : ''}
-      ${p.kind === 'partner' ? `<div class="btn-row" style="margin-top:12px"><button class="btn sm" data-pa="origin-parent">+ Elternteil von ${esc(callName(p) || '')}</button><button class="btn sm" data-pa="origin-sibling">+ Geschwister</button><button class="btn sm" data-pa="origin-child">+ Kind aus anderer Beziehung</button></div>` : ''}
       ${p.kind === 'origin' ? `<div class="hint" style="margin-top:10px">Gehört zur Herkunftsfamilie von <a href="#/p/${esc(p.originOf)}">${esc(fullName(S.byId.get(p.originOf)))}</a> – im Stammbaum über die Stamm-Auswahl „${esc(stemName(S.byId.get(p.originOf) || {}))}“ zu sehen.</div>` : ''}
     </section>
     <section class="sec"><h3>Quellen &amp; Dokumente${srcs.length ? ` (${srcs.length})` : ''}</h3>
