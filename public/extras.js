@@ -116,7 +116,7 @@ async function viewMap(main) {
   const filter = LS.get('stb.mapfilter', 'alle');
   main.innerHTML = `<div class="page map-page">
     <div class="page-head"><div><div class="eyebrow">Wo die Familie herkommt</div><h1>Karte der Orte</h1></div>
-      <div class="seg" role="group" aria-label="Filter">${[['alle', 'Alle'], ['geboren', 'Geburtsorte'], ['wohnt', 'Wohnorte'], ['gestorben', 'Sterbeorte']].map(([k, t]) => `<button data-mf="${k}" aria-pressed="${filter === k}">${t}</button>`).join('')}</div></div>
+      <div class="seg" role="group" aria-label="Filter">${[['alle', 'Alle'], ['geboren', 'Geburt'], ['getauft', 'Taufe'], ['geheiratet', 'Heirat'], ['wohnt', 'Wohnorte'], ['gestorben', 'Tod'], ['beerdigt', 'Grab']].map(([k, t]) => `<button data-mf="${k}" aria-pressed="${filter === k}">${t}</button>`).join('')}</div></div>
     <div class="map-grid"><div id="map" class="map"></div><aside class="card map-side" id="mapSide"><div class="empty">Lädt …</div></aside></div>
     <div id="mapAdmin"></div></div>`;
   let data;
@@ -131,14 +131,17 @@ async function viewMap(main) {
   };
   for (const p of S.persons) {
     if (p.birthPlace) add(p.birthPlace, p, 'geboren');
+    if (p.baptismPlace) add(p.baptismPlace, p, 'getauft');
+    if (p.marriagePlace) { add(p.marriagePlace, p, 'geheiratet'); const s = S.byId.get(p.partnerOf || p.partnerOfId); if (s) add(p.marriagePlace, s, 'geheiratet'); }
     if (p.deathPlace) add(p.deathPlace, p, 'gestorben');
+    if (p.burialPlace) add(p.burialPlace, p, 'beerdigt');
     if (p.city) add(p.city, p, p.death ? 'wohnte' : 'wohnt');
   }
   const coords = new Map(data.places.map(pl => [pl.key, pl]));
   const map = L.map('map', { scrollWheelZoom: true, worldCopyJump: true });
   L.tileLayer(data.kacheln, { attribution: esc(data.quelle), maxZoom: 18 }).addTo(map);
   const layer = L.layerGroup().addTo(map);
-  const typeTxt = { geboren: 'geboren', gestorben: 'gestorben', wohnt: 'wohnt', wohnte: 'wohnte' };
+  const typeTxt = { geboren: 'geboren', getauft: 'getauft', geheiratet: 'geheiratet', gestorben: 'gestorben', beerdigt: 'beerdigt', wohnt: 'wohnt', wohnte: 'wohnte' };
   let pickFor = null;
 
   function draw(f) {
@@ -430,7 +433,7 @@ async function adminSettings(at) {
 }
 
 // ================= Verwaltung: Dubletten =================
-const MERGE_FIELDS = ['firstName', 'callName', 'lastName', 'birthName', 'sex', 'birth', 'birthPlace', 'death', 'deathPlace', 'street', 'zip', 'city', 'notes'];
+const MERGE_FIELDS = ['firstName', 'callName', 'lastName', 'birthName', 'sex', 'birth', 'birthPlace', 'baptism', 'baptismPlace', 'death', 'deathPlace', 'burial', 'burialPlace', 'religion', 'marriage', 'marriagePlace', 'street', 'zip', 'city', 'notes'];
 async function adminDupes(at) {
   await loadData();
   const list = await api('GET', '/api/dubletten');
@@ -480,7 +483,8 @@ const GED = { token: null, plan: null, overrides: {}, rootGedId: null, file: '' 
 function adminGedcom(at) {
   at.innerHTML = `<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(300px,1fr))">
     <div class="card"><h2>Exportieren</h2><p class="hint" style="margin-top:0">GEDCOM 5.5.1 (UTF-8) – lässt sich in Ancestry, MyHeritage, Gramps, FamilySearch u. a. einlesen.</p>
-      <a class="btn primary" href="/api/export.ged">GEDCOM herunterladen</a></div>
+      <div class="btn-row"><a class="btn primary" href="/api/export.ged">GEDCOM herunterladen</a><a class="btn" href="/api/export-medien.zip">mit Fotos &amp; Quellen (.zip)</a></div>
+      <p class="hint">Die ZIP-Datei enthält die GEDCOM-Datei und die Ordner <code>fotos</code> und <code>quellen</code> – gut für Gramps oder als Archiv. Für FamilySearch die reine .ged nehmen.</p></div>
     <div class="card"><h2>Importieren &amp; abgleichen</h2><p class="hint" style="margin-top:0">Die Datei wird zuerst mit dem Stammbaum abgeglichen. Du siehst, wer erkannt wurde, was ergänzt würde und wer neu dazukommt – und entscheidest selbst. Vorher wird automatisch gesichert.</p>
       <input type="file" accept=".ged,.gedcom,text/plain" id="gedFile"><div class="err" id="gedErr" style="margin-top:8px"></div></div>
   </div><div id="gedPlan"></div>`;

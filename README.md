@@ -25,12 +25,15 @@ Alle Familienmitglieder öffnen ihn im Browser (Handy, Tablet, PC) mit einem gem
 - **Geburtstage** der nächsten 12 Monate, Gedenktage und **Kalender-Abo** (iPhone, Android, Outlook)
 - **Jubiläen**: runde Geburtstage, Hochzeitstage (Silber, Gold, Diamant …), „heute vor 100 Jahren“ –
   in der Übersicht, auf der Geburtstagsseite und im Kalender-Abo
-- **Karte der Orte**: Geburts-, Wohn- und Sterbeorte auf einer OpenStreetMap-Karte; Positionen werden
+- **Lebensdaten**: Geburt, Taufe, Heirat (mit Ort), Tod und Beerdigung, Konfession, Rufname,
+  Adoptiv-/Pflegekinder – Daten auch ungefähr („ca. 1900“, „vor 1850“, „zw. 1920 und 1925“)
+- **Karte der Orte**: Geburts-, Tauf-, Heirats-, Wohn-, Sterbe- und Begräbnisorte auf einer OpenStreetMap-Karte; Positionen werden
   automatisch nachgeschlagen und lassen sich per Klick korrigieren
 - **Poster & PDF**: ganzer Stammbaum oder ein Stamm als Poster (A4 bis A0), als PDF drucken oder als SVG
   herunterladen, dazu eine nummerierte Nachfahrenliste
 - **GEDCOM** (Ancestry, MyHeritage, Gramps, FamilySearch …): Export und Import mit **Abgleich** –
-  erkannte Personen, vorgeschlagene Ergänzungen und neue Personen einzeln auswählbar
+  erkannte Personen, vorgeschlagene Ergänzungen und neue Personen einzeln auswählbar; Export wahlweise
+  als ZIP mit Fotos und Quellen (Traueranzeigen, Urkunden …)
 - **Dubletten** finden und zusammenführen (Kinder, Partner, Quellen und Fotos wandern mit)
 - **Rückgängig machen** direkt im Änderungsprotokoll
 - **Benachrichtigungen** über [ntfy](https://ntfy.sh) (z. B. bei neuen Vorschlägen)

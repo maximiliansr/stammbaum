@@ -576,3 +576,5 @@ u.ruf { text-decoration: underline; text-decoration-thickness: 1.5px; text-under
 .ruf-opt input:checked + span { border-color: var(--weser); background: var(--weser-soft); color: var(--weser); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
 .ruf-opt.none input:checked + span { text-decoration: none; }
 .ruf-opt input:focus-visible + span { outline: 2px solid var(--weser); outline-offset: 2px; }
+
+.seg { flex-wrap: wrap; max-width: 100%; }

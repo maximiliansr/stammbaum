@@ -95,8 +95,23 @@ function ageNow(p) {
 }
 // Ohne Sterbedatum, aber über 100 → für Geburtstage nicht berücksichtigen
 function isLiving(p) { if (p.death) return false; const a = ageNow(p); return a === null || a <= 100; }
+// Jahr für kurze Anzeige, ungefähre Daten kenntlich: „um 1900“, „vor 1850“, „1920/25“
+function yearLabel(s) {
+  s = String(s || '');
+  const y = yearOf(s); if (!y) return null;
+  let m;
+  if ((m = /^zw\. .*?(\d{4}) und .*?(\d{4})$/.exec(s))) return m[1] === m[2] ? m[1] : `${m[1]}/${m[2].slice(m[1].slice(0, 2) === m[2].slice(0, 2) ? 2 : 0)}`;
+  if (/^ca\./.test(s)) return `um ${y}`;
+  if (/^vor /.test(s)) return `vor ${y}`;
+  if (/^nach /.test(s)) return `nach ${y}`;
+  return String(y);
+}
+// Datum zum Lesen: „ca. 1900“ → „um 1900“, „zw. 1920 und 1925“ → „zwischen 1920 und 1925“
+function dateText(s) { return String(s || '').replace(/^ca\. /, 'um ').replace(/^zw\. /, 'zwischen '); }
+const birthOrBaptism = (p) => p.birth || (p.baptism ? (/^(ca\.|vor|nach|zw\.)/.test(p.baptism) ? p.baptism : 'ca. ' + yearOf(p.baptism)) : '');
+const deathOrBurial = (p) => p.death || (p.burial ? (/^(ca\.|vor|nach|zw\.)/.test(p.burial) ? p.burial : 'ca. ' + yearOf(p.burial)) : '');
 function lifespan(p) {
-  const b = yearOf(p.birth), d = yearOf(p.death) || (p.death ? '?' : null);
+  const b = yearLabel(birthOrBaptism(p)), d = yearLabel(deathOrBurial(p)) || (p.death ? '?' : null);
   if (b && d) return `${b} – ${d}`;
   if (d) return `† ${d}`;
   if (b) return `* ${b}`;
@@ -121,7 +136,7 @@ function chip(p, extra = '') {
   return `<a class="chip${p.id === S.me ? ' is-me' : ''}" href="#/p/${esc(p.id)}">${avatar(p)}<span>${nameHtml(p)}${p.id === S.me ? ' (du)' : ''}<small>${esc([lifespan(p), extra].filter(Boolean).join(' · '))}</small></span></a>`;
 }
 const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/ß/g, 'ss');
-function searchText(p) { return norm([p.firstName, p.lastName, p.birthName, p.city, p.birthPlace, yearOf(p.birth)].join(' ')); }
+function searchText(p) { return norm([p.firstName, p.lastName, p.birthName, p.city, p.birthPlace, p.baptismPlace, p.burialPlace, yearOf(birthOrBaptism(p))].join(' ')); }
 const G = (sex, m, w, n) => sex === 'm' ? m : sex === 'w' ? w : n;
 const ROLE_TXT = { parent: 'Elternteil', sibling: 'Geschwister', child: 'Kind aus anderer Beziehung', partnerOfParent: 'Partner/in eines Elternteils', relative: 'Angehörige/r' };
 // Eltern eines Geschwisters der Herkunftsfamilie (parentIds leer = beide Eltern)
@@ -690,7 +705,7 @@ function treeNodeHtml(u, ctx, depth = 0, mark = null) {
   const groups = kidGroups(u);
   const kids = groups ? groups.sorted.map(g => g.k) : (u.kids || []);
   const isC = ctx.collapsed.has(key) && kids.length;
-  const pBtn = (x) => `<button class="t-p${x.death ? ' gone' : ''}${x.id === S.me ? ' is-me' : ''}" data-id="${esc(x.id)}"><b>${sexMark(x)}${x.firstName ? givenHtml(x) : '?'} <span class="ln">${esc(x.lastName || '')}</span></b><small>${esc([lifespan(x), x.birthName ? 'geb. ' + x.birthName : '', x.kind === 'origin' && x.role === 'child' ? 'aus anderer Beziehung' : '', x.kind === 'origin' && x.role === 'sibling' && isHalfOrigin(x) ? 'Kind von ' + originSibParents(x).map(y => callName(y)).join(' & ') : '', x.kind === 'origin' && x.role === 'partnerOfParent' ? 'Partner/in von ' + callName(S.byId.get(x.partnerOfId)) : ''].filter(Boolean).join(' · ') || ' ')}</small></button>`;
+  const pBtn = (x) => `<button class="t-p${x.death ? ' gone' : ''}${x.id === S.me ? ' is-me' : ''}" data-id="${esc(x.id)}"><b>${sexMark(x)}${x.firstName ? givenHtml(x) : '?'} <span class="ln">${esc(x.lastName || '')}</span></b><small>${esc([lifespan(x), x.birthName ? 'geb. ' + x.birthName : '', x.kind === 'blood' && x.pedi ? (x.pedi === 'adopted' ? 'adoptiert' : 'Pflegekind') : '', x.kind === 'origin' && x.role === 'child' ? 'aus anderer Beziehung' : '', x.kind === 'origin' && x.role === 'sibling' && isHalfOrigin(x) ? 'Kind von ' + originSibParents(x).map(y => callName(y)).join(' & ') : '', x.kind === 'origin' && x.role === 'partnerOfParent' ? 'Partner/in von ' + callName(S.byId.get(x.partnerOfId)) : ''].filter(Boolean).join(' · ') || ' ')}</small></button>`;
   const stemBtn = (x) => x.kind === 'partner' && x.id !== ctx.stemId && (S.origins.get(x.id) || []).some(o => o.role !== 'child')
     ? `<button class="t-stem" data-stem="${esc(x.id)}" title="Herkunftsfamilie von ${esc(x.firstName)} als Stamm anzeigen">${esc(stemName(x))} ›</button>` : '';
   const divorced = (x) => x.divorced || (u.main && u.main.divorced && u.main.partnerOf === x.id);
@@ -832,9 +847,12 @@ function personHtml(p, compact) {
   const rel = S.me && S.me !== p.id ? kinship(S.me, p.id) : null;
   const age = ageNow(p);
   const f = (label, v) => v ? `<dt>${label}</dt><dd>${esc(v)}</dd>` : '';
-  const born = [p.birth && '* ' + p.birth, p.birthPlace && 'in ' + p.birthPlace].filter(Boolean).join(' ');
-  const died = [p.death && '† ' + p.death, p.deathPlace && 'in ' + p.deathPlace].filter(Boolean).join(' ');
-  const ageTxt = !p.death && age !== null && isLiving(p) ? ` · ${age} Jahre` : (p.death && parseFull(p.death) && parseFull(p.birth) ? ` · ${parseFull(p.death).y - parseFull(p.birth).y - ((parseFull(p.death).m * 100 + parseFull(p.death).d) < (parseFull(p.birth).m * 100 + parseFull(p.birth).d) ? 1 : 0)} Jahre alt geworden` : '');
+  const born = [p.birth && '* ' + dateText(p.birth), p.birthPlace && 'in ' + p.birthPlace].filter(Boolean).join(' ');
+  const died = [p.death && '† ' + dateText(p.death), p.deathPlace && 'in ' + p.deathPlace].filter(Boolean).join(' ');
+  const baptized = [p.baptism && dateText(p.baptism), p.baptismPlace && 'in ' + p.baptismPlace].filter(Boolean).join(' ');
+  const buried = [p.burial && dateText(p.burial), p.burialPlace && 'in ' + p.burialPlace].filter(Boolean).join(' ');
+  const pediTxt = { adopted: G(p.sex, 'Adoptivsohn', 'Adoptivtochter', 'Adoptivkind'), foster: 'Pflegekind' }[p.pedi] || '';
+  const ageTxt = !p.death && age !== null && isLiving(p) ? ` · ${/^(ca\.|vor|nach|zw\.)/.test(p.birth || '') ? 'etwa ' : ''}${age} Jahre` : (p.death && parseFull(p.death) && parseFull(p.birth) ? ` · ${parseFull(p.death).y - parseFull(p.birth).y - ((parseFull(p.death).m * 100 + parseFull(p.death).d) < (parseFull(p.birth).m * 100 + parseFull(p.birth).d) ? 1 : 0)} Jahre alt geworden` : '');
   const address = [p.street, [p.zip, p.city].filter(Boolean).join(' ')].filter(Boolean).join(', ');
   const marriages = p.kind === 'partner' ? [[S.byId.get(p.partnerOf), p]] : partners.map(s => [s, s]);
   const gen = S.gen.get(p.id);
@@ -870,13 +888,14 @@ function personHtml(p, compact) {
       ${!isAdmin() ? '<button class="btn ghost" data-pa="remark">Hinweis senden</button>' : ''}
     </div>
     <section class="sec"><h3>Angaben</h3><dl class="facts">
-      ${f('Geboren', born)}${f('Geburtsname', p.birthName)}
-      ${marriages.map(([who, rec]) => who ? `<dt>${rec.divorced ? 'Ehe (geschieden)' : 'Verheiratet'}</dt><dd>mit <a href="#/p/${esc(who.id)}">${nameHtml(who)}</a>${rec.marriage ? ' seit ' + esc(rec.marriage) : ''}</dd>` : '').join('')}
-      ${f('Gestorben', died)}
+      ${f('Geboren', born)}${f('Getauft', baptized)}${f('Geburtsname', p.birthName)}${f('Konfession', p.religion)}
+      ${pediTxt && p.kind === 'blood' ? f('Elternschaft', `${pediTxt} von ${parents.map(x => fullName(x)).join(' & ') || 'unbekannt'}`) : ''}
+      ${marriages.map(([who, rec]) => who ? `<dt>${rec.divorced ? 'Ehe (geschieden)' : 'Verheiratet'}</dt><dd>mit <a href="#/p/${esc(who.id)}">${nameHtml(who)}</a>${rec.marriage ? (/^\d/.test(rec.marriage) ? ' seit ' : ' ') + esc(dateText(rec.marriage)) : ''}${rec.marriagePlace ? ' in ' + esc(rec.marriagePlace) : ''}</dd>` : '').join('')}
+      ${f('Gestorben', died)}${f('Beerdigt', buried)}
       ${f(p.death ? 'Zuletzt wohnhaft' : 'Wohnort', address)}
       ${(p.custom || []).map(c => f(esc(c.label || 'Info'), c.value)).join('')}
       ${f('Notizen', p.notes)}
-      ${!born && !died && !address && !p.notes && !(p.custom || []).length && !marriages.length ? '<dd class="muted" style="grid-column:1/-1">Noch keine Angaben. Weißt du mehr? → „Änderung vorschlagen“</dd>' : ''}
+      ${!born && !died && !baptized && !buried && !address && !p.notes && !(p.custom || []).length && !marriages.length ? '<dd class="muted" style="grid-column:1/-1">Noch keine Angaben. Weißt du mehr? → „Änderung vorschlagen“</dd>' : ''}
     </dl></section>
     <section class="sec"><h3>Familie</h3>
       ${parents.length ? `<div class="kin-group"><div>Eltern</div><div class="chips">${parents.map(x => chip(x)).join('')}</div></div>` : parentNote}
@@ -921,12 +940,26 @@ function bindPersonActions(root, p) {
 }
 
 // ================= Formulare =================
+// gleiche Regeln wie lib/model.js
 function normDate(v) {
-  v = String(v || '').trim().replace(/[,/-]/g, '.').replace(/\s+/g, '');
-  if (/^\d{8}$/.test(v)) v = `${v.slice(0, 2)}.${v.slice(2, 4)}.${v.slice(4)}`;
-  const m = /^(\d{1,2})\.(\d{1,2})\.(\d{4})$/.exec(v);
-  if (m) return `${m[1].padStart(2, '0')}.${m[2].padStart(2, '0')}.${m[3]}`;
-  return v;
+  const s = String(v || '').trim().replace(/\s+/g, ' ');
+  if (!s) return '';
+  const one = (x) => {
+    x = x.trim().replace(/[,/-]/g, '.').replace(/\s+/g, '');
+    if (/^\d{8}$/.test(x)) x = `${x.slice(0, 2)}.${x.slice(2, 4)}.${x.slice(4)}`;
+    let m;
+    if ((m = /^(\d{1,2})\.(\d{1,2})\.(\d{4})$/.exec(x))) return `${m[1].padStart(2, '0')}.${m[2].padStart(2, '0')}.${m[3]}`;
+    if ((m = /^(\d{1,2})\.(\d{4})$/.exec(x))) return `${m[1].padStart(2, '0')}.${m[2]}`;
+    return x;
+  };
+  let m;
+  if ((m = /^(?:zwischen|zw\.?)\s*(.+?)\s+(?:und|u\.|bis|-|–)\s+(.+)$/i.exec(s))) return `zw. ${one(m[1])} und ${one(m[2])}`;
+  if ((m = /^(\d{4})\s*[-–]\s*(\d{4})$/.exec(s))) return `zw. ${m[1]} und ${m[2]}`;
+  if ((m = /^(?:ca\.?|um|etwa|circa|~|geschätzt|err\.?)\s*(.+)$/i.exec(s))) return `ca. ${one(m[1])}`;
+  if ((m = /^(?:vor|bis|<)\s*(.+)$/i.exec(s))) return `vor ${one(m[1])}`;
+  if ((m = /^(?:nach|ab|>)\s*(.+)$/i.exec(s))) return `nach ${one(m[1])}`;
+  if (/^verstorben$/i.test(s)) return 'verstorben';
+  return one(s);
 }
 
 function resizePhoto(file) {
@@ -950,7 +983,8 @@ function openPersonForm({ mode, person, anchor, role, relation }) {
   const admin = isAdmin();
   const p = mode === 'edit' ? person : {
     firstName: '', lastName: mode === 'child' && anchor ? (anchor.kind === 'partner' ? S.byId.get(anchor.partnerOf)?.lastName : anchor.lastName) || '' : '',
-    birthName: '', sex: '', birth: '', birthPlace: '', death: '', deathPlace: '', marriage: '', divorced: false,
+    birthName: '', sex: '', birth: '', birthPlace: '', death: '', deathPlace: '', marriage: '', marriagePlace: '', divorced: false,
+    baptism: '', baptismPlace: '', burial: '', burialPlace: '', religion: '', pedi: '',
     street: '', zip: '', city: '', notes: '', custom: [], kind: mode === 'partner' || (mode === 'parent' && S.byId.has(anchor.parentId)) ? 'partner' : mode === 'origin' ? 'origin' : 'blood',
     role: role || 'parent',
   };
@@ -974,7 +1008,7 @@ function openPersonForm({ mode, person, anchor, role, relation }) {
     : mode === 'origin' ? `${role === 'child' ? 'Kind' : ROLE_TXT[role] || 'Elternteil'} von ${fullName(anchor)}${role === 'child' ? ' aus anderer Beziehung' : ''} ${admin ? 'hinzufügen' : 'vorschlagen'}`
     : `Partner/in von ${fullName(anchor)} ${admin ? 'hinzufügen' : 'vorschlagen'}`;
   const inp = (k, label, extra = '') => `<label class="fld${extra.includes('full') ? ' full' : ''}"><span>${label}</span><input class="input" name="${k}" value="${esc(p[k] || '')}" ${extra.replace('full', '')}></label>`;
-  const dateInp = (k, label) => inp(k, label, `placeholder="TT.MM.JJJJ" inputmode="decimal" data-date`);
+  const dateInp = (k, label) => inp(k, label, `placeholder="TT.MM.JJJJ · ca. 1900" data-date autocomplete="off"`);
   const dlg = dialog(`<form method="dialog" id="pf">
     <div class="dlg-head"><h2>${esc(title)}</h2><p>${admin ? 'Änderungen werden sofort gespeichert und protokolliert.' : 'Dein Vorschlag geht an die Verwaltung und erscheint nach Prüfung im Stammbaum.'}</p></div>
     <div class="dlg-body">${mode === 'parent' ? `<div class="hint" style="margin-bottom:12px">${upParent
@@ -986,8 +1020,13 @@ function openPersonForm({ mode, person, anchor, role, relation }) {
       <label class="fld"><span>Geschlecht</span><select class="input" name="sex">
         ${[['', 'unbekannt'], ['w', 'weiblich'], ['m', 'männlich'], ['d', 'divers']].map(([v, t]) => `<option value="${v}"${p.sex === v ? ' selected' : ''}>${t}</option>`).join('')}</select></label>
       ${dateInp('birth', 'Geboren am')}${inp('birthPlace', 'Geburtsort')}
+      ${dateInp('baptism', 'Getauft am')}${inp('baptismPlace', 'Taufort / Kirche')}
       ${dateInp('death', 'Gestorben am')}${inp('deathPlace', 'Sterbeort')}
-      ${isPartner ? `${dateInp('marriage', 'Heirat am')}<label class="fld check" style="align-self:end"><input type="checkbox" name="divorced"${p.divorced ? ' checked' : ''}> geschieden</label>` : ''}
+      ${dateInp('burial', 'Beerdigt am')}${inp('burialPlace', 'Begräbnisort / Friedhof')}
+      ${isPartner ? `${dateInp('marriage', 'Heirat am')}${inp('marriagePlace', 'Heiratsort')}<label class="fld check full"><input type="checkbox" name="divorced"${p.divorced ? ' checked' : ''}> geschieden</label>` : ''}
+      ${inp('religion', 'Konfession', 'list="relList"')}<datalist id="relList">${['evangelisch', 'evangelisch-lutherisch', 'evangelisch-reformiert', 'römisch-katholisch', 'altkatholisch', 'neuapostolisch', 'freikirchlich', 'jüdisch', 'muslimisch', 'orthodox', 'konfessionslos'].map(r => `<option value="${r}">`).join('')}</datalist>
+      ${p.kind === 'blood' && (mode === 'child' || mode === 'edit') ? `<label class="fld"><span>Elternschaft</span><select class="input" name="pedi">${[['', 'leibliches Kind'], ['adopted', 'adoptiert'], ['foster', 'Pflegekind']].map(([v, t]) => `<option value="${v}"${(p.pedi || '') === v ? ' selected' : ''}>${t}</option>`).join('')}</select></label>` : ''}
+      <p class="hint full" style="margin:-4px 0 0">Ungefähre Daten gehen auch: „ca. 1900“, „vor 1850“, „nach 1920“, „zw. 1920 und 1925“.</p>
       ${p.kind === 'origin' && (p.role === 'sibling') && (mode === 'edit' || anchor) ? originParentSelect(mode === 'edit' ? p.originOf : (anchor.kind === 'origin' ? anchor.originOf : anchor.id), mode === 'edit' ? p.parentIds : null, mode !== 'edit' && anchor.kind === 'origin' ? anchor.id : null) : ''}
       ${p.kind === 'origin' && (mode === 'origin' && anchor.kind === 'origin') ? `<input type="hidden" name="role" value="${esc(role)}">` : ''}
       ${p.kind === 'origin' && !['partnerOfParent', 'relative'].includes(p.role) && !(mode === 'origin' && anchor.kind === 'origin') ? `<label class="fld full"><span>Beziehung zu ${esc(fullName(mode === 'edit' ? S.byId.get(p.originOf) : anchor))}</span><select class="input" name="role">${[['parent', 'Elternteil (Vater/Mutter)'], ['sibling', 'Geschwister (Bruder/Schwester)'], ['child', 'Kind aus anderer Beziehung']].map(([v, t]) => `<option value="${v}"${(p.role || 'parent') === v ? ' selected' : ''}>${t}</option>`).join('')}</select></label>` : ''}
@@ -1066,11 +1105,13 @@ function openPersonForm({ mode, person, anchor, role, relation }) {
     e.preventDefault();
     const fd = new FormData(form);
     const fields = {};
-    for (const k of ['firstName', 'lastName', 'birthName', 'sex', 'birth', 'birthPlace', 'death', 'deathPlace', 'street', 'zip', 'city', 'notes']) fields[k] = (fd.get(k) || '').toString();
-    for (const k of ['birth', 'death']) fields[k] = normDate(fields[k]);
+    for (const k of ['firstName', 'lastName', 'birthName', 'sex', 'birth', 'birthPlace', 'death', 'deathPlace', 'street', 'zip', 'city', 'notes',
+      'baptism', 'baptismPlace', 'burial', 'burialPlace', 'religion']) fields[k] = (fd.get(k) || '').toString();
+    for (const k of ['birth', 'death', 'baptism', 'burial']) fields[k] = normDate(fields[k]);
+    fields.pedi = fd.has('pedi') ? (fd.get('pedi') || '').toString() : (p.pedi || '');
     fields.callName = ($('input[name=callName]:checked', form) || {}).value || '';
-    if (isPartner) { fields.marriage = normDate(fd.get('marriage')); fields.divorced = !!fd.get('divorced'); }
-    else if (mode === 'edit') { fields.marriage = p.marriage || ''; fields.divorced = !!p.divorced; }
+    if (isPartner) { fields.marriage = normDate(fd.get('marriage')); fields.marriagePlace = (fd.get('marriagePlace') || '').toString(); fields.divorced = !!fd.get('divorced'); }
+    else if (mode === 'edit') { fields.marriage = p.marriage || ''; fields.marriagePlace = p.marriagePlace || ''; fields.divorced = !!p.divorced; }
     fields.custom = $$('.custom-row', dlg).map(r => ({ label: r.querySelector('[name=cl]').value, value: r.querySelector('[name=cv]').value })).filter(c => c.label || c.value);
     if (!fields.firstName && !fields.lastName) { $('#pfErr', dlg).textContent = 'Bitte mindestens einen Namen eingeben.'; return; }
     const btn = $('#pfSave', dlg); btn.disabled = true;
@@ -1461,10 +1502,10 @@ function openSourceViewer(id) {
 
 // ================= Zeitleiste =================
 function lifeRange(p) {
-  const fb = parseFull(p.birth), yb = yearOf(p.birth);
+  const fb = parseFull(p.birth), yb = yearOf(birthOrBaptism(p));
   if (!yb) return null;
   const start = fb ? fb.y + (fb.m - 1) / 12 : yb + 0.5;
-  const fd = parseFull(p.death), yd = yearOf(p.death);
+  const fd = parseFull(p.death), yd = yearOf(deathOrBurial(p));
   const now = new Date(); const nowY = now.getFullYear() + now.getMonth() / 12;
   if (fd) return { start, end: fd.y + (fd.m - 1) / 12, state: 'dead' };
   if (yd) return { start, end: yd + 0.5, state: 'dead' };
@@ -1499,7 +1540,7 @@ function timelineHtml(p, tab) {
   const now = `<div class="tl-now" style="left:${pct(nowY + new Date().getMonth() / 12)}%" title="heute"></div>`;
   const rowHtml = ({ p: x, r }) => {
     const end = r.end || r.start + 1.2;
-    const yrs = `${yearOf(x.birth)}–${r.state === 'living' ? '' : r.state === 'unknown' ? 'verstorben' : yearOf(x.death)}`;
+    const yrs = `${yearLabel(birthOrBaptism(x))}–${r.state === 'living' ? '' : r.state === 'unknown' ? 'verstorben' : yearLabel(deathOrBurial(x))}`;
     return `<div class="tl-row"><a class="tl-item${x.id === p.id ? ' sel' : ''} ${r.state}" href="#/p/${esc(x.id)}" style="--l:${pct(r.start)}%;--w:${(Math.max(end - r.start, 0.6) / span * 100).toFixed(3)}%">
       <span class="tl-av">${avatar(x)}</span><span class="tl-bar"></span>
       <span class="tl-lbl"><b>${nameHtml(x)}</b> <span>${esc(yrs)}</span></span></a></div>`;
@@ -1542,6 +1583,7 @@ function buildQuestions(scope, focusId) {
     if (p.kind === 'blood' && age !== null && age >= 25 && isLiving(p) && !(S.partners.get(p.id) || []).length) add(p, 'partner', 6);
     if (p.kind === 'blood' && age !== null && age >= 30 && !(S.kids.get(p.id) || []).length && (S.partners.get(p.id) || []).length) add(p, 'kids', 6);
     if (p.birth && !p.birthPlace && p.kind !== 'origin') add(p, 'birthPlace', 7);
+    if (p.kind === 'partner' && p.marriage && !p.marriagePlace) add(p, 'marriagePlace', 8);
     if (isLiving(p) && !p.death && !p.city && p.kind !== 'origin') add(p, 'city', 8);
     if (p.death && !S.sources.some(s => (s.personIds || []).includes(p.id))) add(p, 'source', 9);
   }
@@ -1609,6 +1651,7 @@ function ivQuestion(body) {
     case 'partnerParents': ask = `Wer sind die Eltern von ${name}?`; input = `<p class="hint" style="margin-top:0">Was du weißt – ein Name reicht schon.</p>${pair('m', 'Mutter')}${pair('v', 'Vater')}`; break;
     case 'partner': ask = `Ist oder war ${name} verheiratet bzw. in einer festen Partnerschaft?`; input = `<p class="hint" style="margin-top:0">Wenn ja: Name eintragen. Wenn nein: „Nein“ wählen.</p>${pair('pa', 'Partner/in')}<input class="input" name="paMarriage" placeholder="Heirat am (optional)" data-date style="margin-top:8px">`; break;
     case 'kids': ask = `Hat ${name} Kinder, die hier noch fehlen?`; input = `<p class="hint" style="margin-top:0">Ein Kind pro Zeile, gern mit Geburtsdatum: „Lena 12.03.2015“</p><textarea class="input" name="kids" placeholder="Vorname Geburtsdatum"></textarea>`; break;
+    case 'marriagePlace': ask = `Wo haben ${name} und ${esc(fullName(S.byId.get(p.partnerOf)))} geheiratet?`; input = `<input class="input iv-in" name="marriagePlace" placeholder="Ort (Standesamt oder Kirche)" autofocus>`; break;
     case 'birthPlace': ask = `Wo wurde ${name} geboren?`; input = `<input class="input iv-in" name="birthPlace" placeholder="Ort" autofocus>`; break;
     case 'city': ask = `Wo wohnt ${name} heute?`; input = `<input class="input iv-in" name="city" placeholder="Ort" autofocus>`; break;
     case 'source': ask = `Hast du eine Traueranzeige, Urkunde oder ein Foto von ${name}?`; input = `<button type="button" class="btn primary" id="ivSrc">Quelle hochladen</button>`; break;
@@ -1651,7 +1694,7 @@ function ivQuestion(body) {
     const fieldsFrom = (prefix, extra = {}) => Object.assign({ firstName: v(prefix + 'First'), lastName: v(prefix + 'Last'), birth: normDate(v(prefix + 'Birth')), death: normDate(v(prefix + 'Death')) }, extra);
     switch (q.type) {
       case 'alive': if (v('alive') === 'nein') actions.push({ patch: { death: normDate(v('death')) || 'verstorben' } }); else if (v('alive') !== 'ja') return ivErr('Bitte „Ja“ oder „Nein“ wählen – oder „Weiß ich nicht“.'); break;
-      case 'lastName': case 'birthPlace': case 'city': if (!v(q.type)) return ivErr('Bitte etwas eintragen – oder „Weiß ich nicht“.'); actions.push({ patch: { [q.type]: v(q.type) } }); break;
+      case 'lastName': case 'birthPlace': case 'marriagePlace': case 'city': if (!v(q.type)) return ivErr('Bitte etwas eintragen – oder „Weiß ich nicht“.'); actions.push({ patch: { [q.type]: v(q.type) } }); break;
       case 'birth': case 'deathDate': { const k = q.type === 'birth' ? 'birth' : 'death'; const d = normDate(v(k)); if (!d) return ivErr('Bitte ein Datum oder Jahr eintragen.'); actions.push({ patch: { [k]: d } }); break; }
       case 'sex': if (!v('sex')) return ivErr('Bitte auswählen.'); actions.push({ patch: { sex: v('sex') } }); break;
       case 'marriage': if (fd.get('unmarried')) actions.push({ patch: { notes: [p.notes, 'Nicht verheiratet (Lebensgemeinschaft).'].filter(Boolean).join('\n') } }); else if (v('marriage')) actions.push({ patch: { marriage: normDate(v('marriage')) } }); else return ivErr('Bitte ein Datum eintragen – oder „Weiß ich nicht“.'); break;
@@ -1686,7 +1729,7 @@ function ivQuestion(body) {
 
 async function ivSend(p, a) {
   const author = LS.get('stb.author', '') || 'Interview';
-  const blank = { firstName: '', lastName: '', birthName: '', sex: '', birth: '', birthPlace: '', death: '', deathPlace: '', marriage: '', street: '', zip: '', city: '', notes: '', custom: [] };
+  const blank = { firstName: '', lastName: '', birthName: '', sex: '', birth: '', birthPlace: '', death: '', deathPlace: '', marriage: '', marriagePlace: '', street: '', zip: '', city: '', notes: '', custom: [] };
   if (a.patch) {
     if (isAdmin()) return api('PATCH', `/api/personen/${p.id}`, { fields: a.patch, who: 'Admin (Interview)' });
     return api('POST', '/api/vorschlaege', { type: 'edit', targetId: p.id, fields: a.patch, author, message: 'Aus dem Interview' });
@@ -1698,11 +1741,13 @@ async function ivSend(p, a) {
 
 // ================= Verwaltung =================
 const FIELD_LABELS = { firstName: 'Vorname', callName: 'Rufname', lastName: 'Nachname', birthName: 'Geburtsname', sex: 'Geschlecht', birth: 'Geboren', birthPlace: 'Geburtsort',
-  death: 'Gestorben', deathPlace: 'Sterbeort', marriage: 'Heirat', divorced: 'Geschieden', street: 'Straße', zip: 'PLZ', city: 'Ort', notes: 'Notizen',
+  death: 'Gestorben', deathPlace: 'Sterbeort', marriage: 'Heirat', marriagePlace: 'Heiratsort', divorced: 'Geschieden',
+  baptism: 'Getauft', baptismPlace: 'Taufort', burial: 'Beerdigt', burialPlace: 'Begräbnisort', religion: 'Konfession', pedi: 'Elternschaft', street: 'Straße', zip: 'PLZ', city: 'Ort', notes: 'Notizen',
   custom: 'Eigene Felder', code: 'Kennung', parentIds: 'Eltern', role: 'Beziehung', parentId: 'Elternteil', otherParentId: 'Zweites Elternteil', partnerOf: 'Partner von' };
 function fmtVal(k, v) {
   if (k === 'custom') return (v || []).map(c => `${c.label}: ${c.value}`).join('; ');
   if (k === 'divorced') return v ? 'ja' : 'nein';
+  if (k === 'pedi') return { adopted: 'adoptiert', foster: 'Pflegekind' }[v] || 'leiblich';
   if (k === 'parentIds') return v && v.length ? v.map(id => fullName(S.byId.get(id))).join(' & ') : 'beide Eltern';
   if (k === 'role') return ROLE_TXT[v] || v;
   if (k === 'sex') return ({ m: 'männlich', w: 'weiblich', d: 'divers' })[v] || '–';
@@ -1778,8 +1823,8 @@ async function adminSuggestions(at) {
 function openSuggestionEditor(s) {
   const t = S.byId.get(s.targetId);
   const base = s.type === 'edit' ? Object.assign({}, t, s.fields) : Object.assign({ kind: s.type === 'partner' ? 'partner' : s.type === 'origin' ? 'origin' : 'blood' }, s.fields);
-  const keys = ['firstName', 'lastName', 'birthName', 'birth', 'birthPlace', 'death', 'deathPlace', 'street', 'zip', 'city'];
-  if (base.kind === 'partner') keys.splice(7, 0, 'marriage');
+  const keys = ['firstName', 'lastName', 'birthName', 'birth', 'birthPlace', 'baptism', 'baptismPlace', 'death', 'deathPlace', 'burial', 'burialPlace', 'religion', 'street', 'zip', 'city'];
+  if (base.kind === 'partner') keys.splice(11, 0, 'marriage', 'marriagePlace');
   const dlg = dialog(`<form id="sf"><div class="dlg-head"><h2>Vorschlag anpassen</h2><p>Von ${esc(s.author)} – Werte vor dem Übernehmen korrigieren.</p></div>
     <div class="dlg-body"><div class="form-grid">${keys.map(k => `<label class="fld"><span>${FIELD_LABELS[k]}</span><input class="input" name="${k}" value="${esc(base[k] || '')}"></label>`).join('')}
     <label class="fld"><span>Geschlecht</span><select class="input" name="sex">${[['', 'unbekannt'], ['w', 'weiblich'], ['m', 'männlich'], ['d', 'divers']].map(([v, x]) => `<option value="${v}"${base.sex === v ? ' selected' : ''}>${x}</option>`).join('')}</select></label>
@@ -1828,7 +1873,9 @@ function adminChecks(at) {
   const link = (p, extra = '') => `<a href="#/p/${esc(p.id)}">${esc(fullName(p))}</a>${extra ? ' – ' + esc(extra) : ''}`;
   const codes = new Map(); S.persons.forEach(p => { if (p.code) { if (!codes.has(p.code)) codes.set(p.code, []); codes.get(p.code).push(p); } });
   add('Doppelte Kennungen', [...codes.entries()].filter(([, l]) => l.length > 1).map(([c, l]) => `${esc(c)}: ${l.map(p => link(p)).join(', ')}`), 'Die alte Excel-Kennung ist doppelt vergeben – für die App unkritisch, aber zur Ordnung anpassen.');
-  add('Ungewöhnliches Datumsformat', S.persons.flatMap(p => ['birth', 'death', 'marriage'].filter(k => p[k] && !/^(\d{2}\.\d{2}\.\d{4}|\d{1,2}\.\d{4}|\d{4})$/.test(p[k])).map(k => link(p, `${FIELD_LABELS[k]}: „${p[k]}“`))));
+  const BASE = '(?:\\d{2}\\.\\d{2}\\.\\d{4}|\\d{2}\\.\\d{4}|\\d{4})';
+  const DRE = new RegExp(`^(?:(?:ca\\.|vor|nach) )?${BASE}$|^zw\\. ${BASE} und ${BASE}$|^verstorben$`);
+  add('Ungewöhnliches Datumsformat', S.persons.flatMap(p => ['birth', 'baptism', 'death', 'burial', 'marriage'].filter(k => p[k] && !DRE.test(p[k])).map(k => link(p, `${FIELD_LABELS[k]}: „${p[k]}“`))), 'Ungefähre Angaben bitte als „ca. 1900“, „vor 1850“, „nach 1920“ oder „zw. 1920 und 1925“.');
   add('Über 100 Jahre ohne Sterbedatum', S.persons.filter(p => !p.death && ageNow(p) > 100).map(p => link(p, `* ${p.birth}`)), 'Werden nicht bei den Geburtstagen gezeigt. Sterbedatum (oder Jahr) ergänzen.');
   add('Nachname wiederholt sich im Vornamen', S.persons.filter(p => p.lastName && p.firstName.split(' ').slice(1).includes(p.lastName)).map(p => link(p)), 'Vermutlich wurde der Nachname doppelt eingetragen (z. B. „Christopher Dean Dean“).');
   add('Ohne Nachnamen', S.persons.filter(p => !p.lastName).map(p => link(p)));

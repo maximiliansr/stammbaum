@@ -158,7 +158,7 @@ test('GEDCOM: Abgleich ergänzt vorhandene Personen und hängt neue korrekt ein'
   assert.equal(byName(d, 'Reinhold').parentId, otto.id);
   assert.equal(byName(d, 'Reinhold').otherParentId, byName(d, 'Frieda').id);
   assert.ok(otto.custom.some(c => c.label === 'Beruf' && c.value === 'Kapitän'));
-  assert.equal(heinrich.birth, '1870');
+  assert.equal(heinrich.birth, 'ca. 1870', 'ungefähres Datum bleibt erhalten');
 });
 
 test('Einstellungen: Geheimnisse werden maskiert, ntfy-Test erreicht den Server', async () => {
@@ -269,4 +269,37 @@ test('Rufname: nur einer der Vornamen, im GEDCOM erhalten', async () => {
   d = (await E.req('GET', '/api/data')).data;
   const hans = d.persons.find(p => p.lastName === 'Neu');
   assert.equal(hans.firstName, 'Hans Peter'); assert.equal(hans.callName, 'Hans');
+});
+
+test('GEDCOM: Taufe, Beerdigung, Konfession, Heiratsort, Adoption und ungefähre Daten', async () => {
+  const T = await startServer();
+  let d = (await T.req('GET', '/api/data')).data;
+  const karl = d.persons.find(p => p.firstName === 'Karl'), ilse = d.persons.find(p => p.firstName === 'Ilse');
+  const ute = d.persons.find(p => p.firstName === 'Ute');
+  let r = await T.req('PATCH', `/api/personen/${karl.id}`, { fields: { baptism: '2.3.1928', baptismPlace: 'St. Marien', burial: 'um 2004', burialPlace: 'Ohlsdorf', religion: 'evangelisch' } });
+  assert.equal(r.status, 200);
+  assert.equal(r.data.person.baptism, '02.03.1928'); assert.equal(r.data.person.burial, 'ca. 2004');
+  await T.req('PATCH', `/api/personen/${ilse.id}`, { fields: { marriagePlace: 'Hamburg', birth: 'zwischen 1930 und 1932' } });
+  await T.req('PATCH', `/api/personen/${ute.id}`, { fields: { pedi: 'adopted' } });
+  const bad = await T.req('PATCH', `/api/personen/${karl.id}`, { fields: { burial: 'irgendwann' } });
+  assert.equal(bad.status, 400);
+  const exp = (await T.req('GET', '/api/export.ged')).data;
+  assert.match(exp, /1 CHR\r\n2 DATE 2 MAR 1928\r\n2 PLAC St\. Marien/);
+  assert.match(exp, /1 BURI\r\n2 DATE ABT 2004\r\n2 PLAC Ohlsdorf/);
+  assert.match(exp, /1 RELI evangelisch/);
+  assert.match(exp, /2 DATE BET 1930 AND 1932/);
+  assert.match(exp, /1 MARR\r\n2 DATE [^\r]+\r\n2 PLAC Hamburg/);
+  assert.match(exp, /2 PEDI adopted/);
+  // Rundreise in leeren Stammbaum
+  const E = await startServer({ BEISPIELDATEN: 'nein' });
+  const plan = await E.req('POST', '/api/gedcom/vorschau', { text: exp.replace(/1 _STB_ID .*\r\n/g, '') });
+  await E.req('POST', '/api/gedcom/uebernehmen', { token: plan.data.token, adds: plan.data.adds.map(a => a.key), updates: [] });
+  d = (await E.req('GET', '/api/data')).data;
+  const k2 = d.persons.find(p => p.firstName === 'Karl'), i2 = d.persons.find(p => p.firstName === 'Ilse'), u2 = d.persons.find(p => p.firstName === 'Ute');
+  assert.equal(k2.baptismPlace, 'St. Marien'); assert.equal(k2.burial, 'ca. 2004'); assert.equal(k2.religion, 'evangelisch');
+  assert.equal(i2.marriagePlace, 'Hamburg'); assert.equal(i2.birth, 'zw. 1930 und 1932');
+  assert.equal(u2.pedi, 'adopted');
+  // ZIP mit Medien
+  const zip = await fetch(T.base + '/api/export-medien.zip', { headers: { Cookie: '' } });
+  assert.equal(zip.status, 401);
 });

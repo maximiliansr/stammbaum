@@ -494,7 +494,7 @@ route('POST', '/api/vorschlaege/([a-zA-Z0-9_-]+)/(annehmen|ablehnen)', 'admin', 
     const override = (ctx.body || {}).fields;
     let fields = s.fields;
     if (override) {
-      const r = sanitizeFields(Object.assign({}, override, { __legacy: store.byId.get(s.targetId) || {} }), { partial: s.type === 'edit' });
+      const r = sanitizeFields(Object.assign({}, s.fields || {}, override, { __legacy: store.byId.get(s.targetId) || {} }), { partial: s.type === 'edit' });
       if (r.errors.length) throw new HttpError(400, r.errors.join(' · '));
       fields = r.fields;
     }
@@ -645,8 +645,9 @@ route('GET', '/api/export\\.json', 'admin', (ctx) => {
 
 route('GET', '/api/export\\.csv', 'admin', (ctx) => {
   const cols = [['code', 'Kennung'], ['kind', 'Art'], ['firstName', 'Vorname'], ['callName', 'Rufname'], ['lastName', 'Nachname'], ['birthName', 'Geburtsname'],
-    ['sex', 'Geschlecht'], ['birth', 'Geburtsdatum'], ['birthPlace', 'Geburtsort'], ['marriage', 'Heirat'], ['death', 'Gestorben'],
-    ['deathPlace', 'Sterbeort'], ['street', 'Straße'], ['zip', 'PLZ'], ['city', 'Wohnort'], ['rel', 'Bezug'], ['notes', 'Notizen']];
+    ['sex', 'Geschlecht'], ['birth', 'Geburtsdatum'], ['birthPlace', 'Geburtsort'], ['baptism', 'Taufe'], ['baptismPlace', 'Taufort'], ['religion', 'Konfession'],
+    ['marriage', 'Heirat'], ['marriagePlace', 'Heiratsort'], ['death', 'Gestorben'],
+    ['deathPlace', 'Sterbeort'], ['burial', 'Beerdigung'], ['burialPlace', 'Begräbnisort'], ['pedi', 'Elternschaft'], ['street', 'Straße'], ['zip', 'PLZ'], ['city', 'Wohnort'], ['rel', 'Bezug'], ['notes', 'Notizen']];
   const esc = (v) => { const s = String(v ?? ''); return /[;"\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
   const rows = [cols.map(c => c[1]).join(';')];
   for (const p of store.doc.persons) {
