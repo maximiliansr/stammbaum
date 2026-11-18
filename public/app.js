@@ -53,8 +53,9 @@ function index(persons) {
   const RO = { relative: -1, parent: 0, partnerOfParent: 1, sibling: 2, child: 3 };
   S.sibTargets = new Set(persons.filter(x => x.siblingOfId).map(x => x.siblingOfId));
   for (const list of S.origins.values()) list.sort((a, b) => (a.role === b.role ? sortKey(a.birth) - sortKey(b.birth) : (RO[a.role] ?? 0) - (RO[b.role] ?? 0)));
-  for (const list of S.kids.values()) list.sort((a, b) => (a.order - b.order) || (sortKey(a.birth) - sortKey(b.birth)));
-  for (const list of S.partners.values()) list.sort((a, b) => (a.order - b.order));
+  // Geschwister nach Alter (ohne Geburtsdatum ans Ende), Partner nach Heiratsdatum
+  for (const list of S.kids.values()) list.sort((a, b) => (sortKey(birthOrBaptism(a)) - sortKey(birthOrBaptism(b))) || (a.order - b.order));
+  for (const list of S.partners.values()) list.sort((a, b) => (sortKey(a.marriage) - sortKey(b.marriage)) || (a.order - b.order));
   S.roots = persons.filter(p => p.kind === 'blood' && (!p.parentId || !S.byId.has(p.parentId)));
   const walk = (p, g) => { S.gen.set(p.id, g); (S.partners.get(p.id) || []).forEach(s => S.gen.set(s.id, g)); (S.kids.get(p.id) || []).forEach(k => walk(k, g + 1)); };
   S.roots.forEach(r => walk(r, 0));
@@ -1195,12 +1196,10 @@ function parentFieldsHtml(p) {
 }
 function adminStructureFields(p) {
   if (p.kind === 'origin') return '';
-  if (p.kind === 'blood') return `<div class="form-sep">Verwaltung</div>
-      <label class="fld"><span>Reihenfolge unter Geschwistern</span><input class="input" type="number" name="order" value="${esc(p.order || 0)}"></label>`;
+  if (p.kind === 'blood') return '';
   const t = S.byId.get(p.partnerOf);
   return `<div class="form-sep">Einordnung (Verwaltung)</div>
-    <label class="fld full"><span>Partner/in von</span><input class="input" id="asPartner" value="${esc(t ? fullName(t) : '')}"><input type="hidden" name="partnerOf" value="${esc(p.partnerOf || '')}"></label>
-    <label class="fld"><span>Reihenfolge</span><input class="input" type="number" name="order" value="${esc(p.order || 0)}"></label>`;
+    <label class="fld full"><span>Partner/in von</span><input class="input" id="asPartner" value="${esc(t ? fullName(t) : '')}"><input type="hidden" name="partnerOf" value="${esc(p.partnerOf || '')}"></label>`;
 }
 function bindAdminStructure(dlg, p) {
   const ap = $('#asParent', dlg);
@@ -1214,7 +1213,7 @@ function bindAdminStructure(dlg, p) {
   if (pp) attachPicker(pp, (x) => { $('[name=partnerOf]', dlg).value = x.id; }, { filter: (x) => x.kind === 'blood' });
 }
 function readAdminStructure(dlg, p) {
-  const out = { order: Number($('[name=order]', dlg)?.value || p.order || 0) };
+  const out = {};
   if (p.kind === 'blood') {
     if (!$('#asParent', dlg).value.trim()) $('[name=parentId]', dlg).value = '';
     out.parentId = $('[name=parentId]', dlg).value || null;
