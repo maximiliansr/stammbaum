@@ -218,6 +218,20 @@ function originParentIds(partnerId, ids) {
   return ok;
 }
 
+// Zweites Elternteil schätzen: Partner/in, mit dem/der die Person zum Geburtsjahr verheiratet war
+function guessOtherParent(partners, birth) {
+  const yr = (s) => { const m = /(\d{4})/.exec(s || ''); return m ? +m[1] : null; };
+  const by = yr(birth);
+  if (by) {
+    const alive = partners.filter(x => !yr(x.death) || yr(x.death) >= by - 1);
+    const married = alive.filter(x => yr(x.marriage) && yr(x.marriage) <= by + 1).sort((a, b) => yr(b.marriage) - yr(a.marriage));
+    if (married.length) return married[0];
+    if (alive.length === 1) return alive[0];
+  }
+  const cur = partners.filter(x => !x.divorced);
+  return cur[cur.length - 1] || null;
+}
+
 function createPerson({ kind, anchorId, fields, otherParentId, role, parentIds, relation }, who) {
   if (kind === 'root') {
     // Neue Stammperson (oberste Generation einer Linie)
@@ -298,7 +312,7 @@ function createPerson({ kind, anchorId, fields, otherParentId, role, parentIds, 
     if (anchor.kind === 'partner') p.otherParentId = anchor.id;
     else if (otherParentId === 'none') p.otherParentId = null;
     else if (otherParentId && partnerIds.some(x => x.id === otherParentId)) p.otherParentId = otherParentId;
-    else { const cur = partnerIds.find(x => !x.divorced); p.otherParentId = cur ? cur.id : null; }
+    else { const g = guessOtherParent(partnerIds, p.birth); p.otherParentId = g ? g.id : null; }
     p.order = store.doc.persons.filter(x => x.parentId === bloodParent.id).length + 1;
   }
   if (!p.code) p.code = nextCode(kind === 'partner' ? anchor : store.byId.get(p.parentId), kind);
@@ -546,7 +560,8 @@ route('PATCH', '/api/personen/([a-zA-Z0-9_-]+)', 'admin', (ctx, m) => {
   if (!target) throw new HttpError(404, 'Person nicht gefunden');
   const r = sanitizeFields(Object.assign({}, (ctx.body || {}).fields, { __legacy: target }), { partial: true });
   if (r.errors.length) throw new HttpError(400, r.errors.join(' · '));
-  return { person: updatePerson(m[1], r.fields, (ctx.body || {}).who || 'Admin').person };
+  const extra = (ctx.body || {}).otherParentId !== undefined ? { otherParentId: (ctx.body || {}).otherParentId } : {};
+  return { person: updatePerson(m[1], r.fields, (ctx.body || {}).who || 'Admin', extra).person };
 });
 
 // ---------- Quellen ----------

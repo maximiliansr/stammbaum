@@ -547,3 +547,20 @@ select.input.sm, .input.sm { padding: 4px 8px; font-size: 13px; width: auto; }
 .kind-legend { display: flex; gap: 8px; flex-wrap: wrap; font-size: 12px; color: var(--ink-3); margin: -6px 0 6px; align-items: center; }
 .kind-legend .kind-tag { margin-left: 0; }
 .bday-row.mem .who { color: var(--ink-2); }
+
+/* ---------- Geschlecht & Elternteil-Gruppen im Baum ---------- */
+:root { --sx-m: #2F6FA3; --sx-w: #B5476B; --pc1: #2F7D6B; --pc2: #A0612A; --pc3: #6A55A8; --pc4: #2F6FA3; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --sx-m: #7FB0DA; --sx-w: #E59AB3; --pc1: #6CC2AC; --pc2: #E0A56E; --pc3: #AE9CE6; --pc4: #7FB0DA; } }
+:root[data-theme="dark"] { --sx-m: #7FB0DA; --sx-w: #E59AB3; --pc1: #6CC2AC; --pc2: #E0A56E; --pc3: #AE9CE6; --pc4: #7FB0DA; }
+.sx { font-family: var(--sym); font-weight: 400; font-size: .9em; margin-right: 4px; display: inline-block; width: 1em; text-align: center; }
+.sx-m { color: var(--sx-m); } .sx-w { color: var(--sx-w); } .sx-d { color: var(--ink-3); }
+.t-unit { --pc: var(--ink-3); }
+.pc1 { --pc: var(--pc1); } .pc2 { --pc: var(--pc2); } .pc3 { --pc: var(--pc3); } .pc4 { --pc: var(--pc4); } .pc0 { --pc: var(--ink-3); }
+.t-unit.marked { border-left: 4px solid var(--pc); }
+.t-mark { font: 600 10.5px/1 var(--sans); letter-spacing: .02em; color: var(--pc); padding: 7px 12px 0; }
+.t-ptn[class*="pc"] { box-shadow: inset 4px 0 0 var(--pc); }
+.t-ptn[class*="pc"] .sym { color: var(--pc); }
+.t-kids > .t-node.grp-start { padding-top: 22px; }
+.t-kids > .t-node.grp-start::before { top: 48px; }
+.t-kids > .t-node.grp-start:last-child::after { height: 48px; }
+.tree-legend { display: flex; gap: 12px; align-items: center; font-size: 12px; color: var(--ink-3); }

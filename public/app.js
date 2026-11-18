@@ -642,19 +642,57 @@ function stemUnit(partnerId) {
 }
 function unitDepth(u) { return 1 + Math.max(0, ...(u.kids || []).map(unitDepth)); }
 
-function treeNodeHtml(u, ctx, depth = 0) {
-  const key = u.main ? u.main.id : u.id;
+// Kinder einer Person nach dem zweiten Elternteil gruppieren (nur wenn es mehrere Gruppen gibt)
+function kidGroups(u) {
   const kids = u.kids || [];
+  if (!u.main || u.main.kind !== 'blood' || kids.length < 2) return null;
+  const partners = u.partners || [];
+  const keyOf = (k) => (k.main && k.main.parentId === u.main.id && partners.some(x => x.id === k.main.otherParentId)) ? k.main.otherParentId : '';
+  const keys = new Set(kids.map(keyOf));
+  if (keys.size < 2) return null;
+  const order = [...partners.map(x => x.id), ''];
+  const idx = new Map(order.map((id, i) => [id, i]));
+  const sorted = kids.map((k, i) => ({ k, i, g: keyOf(k) })).sort((a, b) => idx.get(a.g) - idx.get(b.g) || sortKey(a.k.main?.birth) - sortKey(b.k.main?.birth) || a.i - b.i);
+  const color = new Map(partners.map((x, i) => [x.id, (i % 4) + 1]));
+  return { sorted, color, label(g) {
+    const x = S.byId.get(g);
+    if (!x) return { txt: 'anderes / unbekanntes Elternteil', c: 0 };
+    return { txt: `${x.sex === 'w' ? 'Mutter' : x.sex === 'm' ? 'Vater' : 'Elternteil'}: ${(x.firstName || '?').split(' ')[0]}`, c: color.get(g) };
+  } };
+}
+// Zweites Elternteil schätzen: Partner/in, mit dem/der die Person zum Geburtsjahr verheiratet war
+function guessOtherParent(partners, birth) {
+  const by = yearOf(birth);
+  if (by) {
+    const alive = partners.filter(x => !yearOf(x.death) || yearOf(x.death) >= by - 1);
+    const married = alive.filter(x => yearOf(x.marriage) && yearOf(x.marriage) <= by + 1).sort((a, b) => yearOf(b.marriage) - yearOf(a.marriage));
+    if (married.length) return married[0];
+    if (alive.length === 1) return alive[0];
+  }
+  const cur = partners.filter(x => !x.divorced);
+  return cur[cur.length - 1] || null;
+}
+const SEX_SYM = { m: ['♂', 'männlich'], w: ['♀', 'weiblich'], d: ['⚧', 'divers'] };
+function sexMark(x) { const s = SEX_SYM[x.sex]; return s ? `<span class="sx sx-${x.sex}" title="${s[1]}" aria-label="${s[1]}">${s[0]}</span>` : ''; }
+
+function treeNodeHtml(u, ctx, depth = 0, mark = null) {
+  const key = u.main ? u.main.id : u.id;
+  const groups = kidGroups(u);
+  const kids = groups ? groups.sorted.map(g => g.k) : (u.kids || []);
   const isC = ctx.collapsed.has(key) && kids.length;
-  const pBtn = (x) => `<button class="t-p${x.death ? ' gone' : ''}${x.id === S.me ? ' is-me' : ''}" data-id="${esc(x.id)}"><b>${esc(x.firstName || '?')} <span class="ln">${esc(x.lastName || '')}</span></b><small>${esc([lifespan(x), x.birthName ? 'geb. ' + x.birthName : '', x.kind === 'origin' && x.role === 'child' ? 'aus anderer Beziehung' : '', x.kind === 'origin' && x.role === 'sibling' && isHalfOrigin(x) ? 'Kind von ' + originSibParents(x).map(y => y.firstName.split(' ')[0]).join(' & ') : '', x.kind === 'origin' && x.role === 'partnerOfParent' ? 'Partner/in von ' + (S.byId.get(x.partnerOfId)?.firstName || '').split(' ')[0] : ''].filter(Boolean).join(' · ') || ' ')}</small></button>`;
+  const pBtn = (x) => `<button class="t-p${x.death ? ' gone' : ''}${x.id === S.me ? ' is-me' : ''}" data-id="${esc(x.id)}"><b>${sexMark(x)}${esc(x.firstName || '?')} <span class="ln">${esc(x.lastName || '')}</span></b><small>${esc([lifespan(x), x.birthName ? 'geb. ' + x.birthName : '', x.kind === 'origin' && x.role === 'child' ? 'aus anderer Beziehung' : '', x.kind === 'origin' && x.role === 'sibling' && isHalfOrigin(x) ? 'Kind von ' + originSibParents(x).map(y => y.firstName.split(' ')[0]).join(' & ') : '', x.kind === 'origin' && x.role === 'partnerOfParent' ? 'Partner/in von ' + (S.byId.get(x.partnerOfId)?.firstName || '').split(' ')[0] : ''].filter(Boolean).join(' · ') || ' ')}</small></button>`;
   const stemBtn = (x) => x.kind === 'partner' && x.id !== ctx.stemId && (S.origins.get(x.id) || []).some(o => o.role !== 'child')
     ? `<button class="t-stem" data-stem="${esc(x.id)}" title="Herkunftsfamilie von ${esc(x.firstName)} als Stamm anzeigen">${esc(stemName(x))} ›</button>` : '';
   const divorced = (x) => x.divorced || (u.main && u.main.divorced && u.main.partnerOf === x.id);
   const head = u.main ? pBtn(u.main) + stemBtn(u.main) : `<div class="t-p placeholder"><b>${esc(u.placeholder)}</b><small>nicht erfasst</small></div>`;
-  return `<div class="t-node${kids.length ? ' has-kids' : ''}${isC ? ' collapsed' : ''}" data-node="${esc(key)}" data-depth="${depth}">
-    <div class="t-unit">${head}${(u.partners || []).map(x => `<div class="t-ptn${divorced(x) ? ' div' : ''}"><span class="sym" title="${divorced(x) ? 'geschieden' : 'verheiratet'}">${divorced(x) ? '⚮' : '⚭'}</span><div class="t-ptn-in">${pBtn(x)}${stemBtn(x)}</div></div>`).join('')}
+  const pc = (x) => groups && groups.color.has(x.id) ? ` pc${groups.color.get(x.id)}` : '';
+  const markHtml = mark ? `<div class="t-mark pc${mark.c}">${esc(mark.txt)}</div>` : '';
+  return `<div class="t-node${kids.length ? ' has-kids' : ''}${isC ? ' collapsed' : ''}${mark && mark.first ? ' grp-start' : ''}" data-node="${esc(key)}" data-depth="${depth}">
+    <div class="t-unit${mark ? ' marked pc' + mark.c : ''}">${markHtml}${head}${(u.partners || []).map(x => `<div class="t-ptn${divorced(x) ? ' div' : ''}${pc(x)}"><span class="sym" title="${divorced(x) ? 'geschieden' : 'verheiratet'}">${divorced(x) ? '⚮' : '⚭'}</span><div class="t-ptn-in">${pBtn(x)}${stemBtn(x)}</div></div>`).join('')}
     ${kids.length ? `<button class="t-tog" data-tog="${esc(key)}" aria-expanded="${!isC}" title="${isC ? 'Kinder zeigen' : 'Kinder ausblenden'}">${kids.length}</button>` : ''}</div>
-    ${kids.length ? `<div class="t-kids">${kids.map(k => treeNodeHtml(k, ctx, depth + 1)).join('')}</div>` : ''}
+    ${kids.length ? `<div class="t-kids">${groups
+      ? groups.sorted.map((g, i) => treeNodeHtml(g.k, ctx, depth + 1, { ...groups.label(g.g), first: i > 0 && g.g !== groups.sorted[i - 1].g })).join('')
+      : kids.map(k => treeNodeHtml(k, ctx, depth + 1)).join('')}</div>` : ''}
   </div>`;
 }
 
@@ -942,7 +980,7 @@ function openPersonForm({ mode, person, anchor, role, relation }) {
       ${p.kind === 'origin' && (p.role === 'sibling') && (mode === 'edit' || anchor) ? originParentSelect(mode === 'edit' ? p.originOf : (anchor.kind === 'origin' ? anchor.originOf : anchor.id), mode === 'edit' ? p.parentIds : null, mode !== 'edit' && anchor.kind === 'origin' ? anchor.id : null) : ''}
       ${p.kind === 'origin' && (mode === 'origin' && anchor.kind === 'origin') ? `<input type="hidden" name="role" value="${esc(role)}">` : ''}
       ${p.kind === 'origin' && !['partnerOfParent', 'relative'].includes(p.role) && !(mode === 'origin' && anchor.kind === 'origin') ? `<label class="fld full"><span>Beziehung zu ${esc(fullName(mode === 'edit' ? S.byId.get(p.originOf) : anchor))}</span><select class="input" name="role">${[['parent', 'Elternteil (Vater/Mutter)'], ['sibling', 'Geschwister (Bruder/Schwester)'], ['child', 'Kind aus anderer Beziehung']].map(([v, t]) => `<option value="${v}"${(p.role || 'parent') === v ? ' selected' : ''}>${t}</option>`).join('')}</select></label>` : ''}
-      ${coParents.length ? `<label class="fld full"><span>Zweites Elternteil</span><select class="input" name="otherParentId">${coParents.map(c => `<option value="${esc(c.id)}"${c === coParents.find(y => !y.divorced) ? ' selected' : ''}>gemeinsames Kind mit ${esc(fullName(c))}</option>`).join('')}<option value="none">– anderer oder unbekannter Elternteil –</option></select></label>` : ''}
+      ${coParents.length ? `<label class="fld full"><span>Zweites Elternteil</span><select class="input" name="otherParentId">${coParents.map(c => `<option value="${esc(c.id)}"${c === guessOtherParent(coParents, '') ? ' selected' : ''}>gemeinsames Kind mit ${esc(fullName(c))}</option>`).join('')}<option value="none">– anderer oder unbekannter Elternteil –</option></select></label>` : ''}
       ${mode === 'edit' && p.kind === 'blood' ? parentFieldsHtml(p) : ''}
       <div class="form-sep">Wohnort</div>
       ${inp('street', 'Straße', 'class="full"')}${inp('zip', 'PLZ', 'inputmode="numeric"')}${inp('city', 'Ort')}
@@ -969,6 +1007,13 @@ function openPersonForm({ mode, person, anchor, role, relation }) {
   if (roleSel && $('#opSel', form)) { const sync = () => { $('#opSel', form).closest('label').hidden = roleSel.value !== 'sibling'; }; roleSel.addEventListener('change', sync); sync(); }
   const opIds = () => { const el = $('#opSel', form); if (!el || el.closest('label').hidden) return undefined; return el.value ? el.value.split(',') : []; };
   $$('[data-date]', form).forEach(i => i.addEventListener('blur', () => { i.value = normDate(i.value); }));
+  // Zweites Elternteil passend zum Geburtsdatum vorschlagen, solange nicht selbst gewählt
+  const opSel = $('select[name=otherParentId]', form);
+  if (opSel && coParents.length > 1) {
+    let touched = false;
+    opSel.addEventListener('change', () => { touched = true; });
+    $('[name=birth]', form).addEventListener('blur', (e) => { if (!touched) { const g = guessOtherParent(coParents, e.target.value); if (g) opSel.value = g.id; } });
+  }
   $('[data-cancel]', dlg).onclick = () => dlg.close();
   $('#addCustom', dlg).onclick = () => { $('#customRows', dlg).insertAdjacentHTML('beforeend', customRow({ label: '', value: '' })); };
   $('#customRows', dlg).addEventListener('click', (e) => { if (e.target.closest('[data-rmc]')) e.target.closest('.custom-row').remove(); });
@@ -1765,10 +1810,33 @@ function adminChecks(at) {
   }).map(p => link(p, `* ${yearOf(p.birth)}, Elternteil * ${yearOf(S.byId.get(p.parentId).birth)}`)));
   add('Angeheiratete ohne erfasste Eltern', S.persons.filter(p => p.kind === 'partner' && !originParents(p.id).length).map(p => link(p, 'Partner/in von ' + fullName(S.byId.get(p.partnerOf)))), 'Lässt sich auf der Personenseite oder im Interview ergänzen.');
   add('Verstorben ohne Quelle', S.persons.filter(p => p.death && p.kind !== 'origin' && !S.sources.some(s => (s.personIds || []).includes(p.id))).map(p => link(p, '† ' + p.death)), 'Traueranzeige, Sterbeurkunde oder Stammbuchauszug als Beleg hinterlegen.');
+  // Zweites Elternteil fehlt oder passt nicht zum Geburtsjahr
+  const opItems = [];
+  for (const k of S.persons) {
+    if (k.kind !== 'blood' || !S.byId.has(k.parentId)) continue;
+    const ps = S.partners.get(k.parentId) || [];
+    if (!ps.length) continue;
+    const cur = S.byId.get(k.otherParentId);
+    const g = guessOtherParent(ps, k.birth);
+    const by = yearOf(k.birth), dc = cur && yearOf(cur.death);
+    const impossible = cur && by && dc && by > dc + 1;
+    const mismatch = cur && g && g.id !== cur.id && by && yearOf(g.marriage) && yearOf(g.marriage) <= by && (!yearOf(cur.marriage) || yearOf(cur.marriage) < yearOf(g.marriage));
+    if (!cur && ps.length < 2 && !g) continue;
+    if (cur && !impossible && !mismatch) continue;
+    const why = !cur ? 'kein zweites Elternteil' : impossible ? `${(cur.firstName || '').split(' ')[0]} † ${dc}, Kind * ${by}` : `eingetragen: ${(cur.firstName || '').split(' ')[0]}`;
+    opItems.push(link(k, `${by ? '* ' + by + ', ' : ''}${why}`) + (g && (!cur || g.id !== cur.id) ? ` <button class="btn sm" data-fixop="${esc(k.id)}:${esc(g.id)}">${g.sex === 'w' ? 'Mutter' : g.sex === 'm' ? 'Vater' : 'Elternteil'}: ${esc(fullName(g))}</button>` : ''));
+  }
+  add('Zweites Elternteil prüfen', opItems, 'Bei mehreren Partnern: Kinder sind evtl. dem falschen Elternteil zugeordnet (z. B. nach Tod der ersten Ehefrau geboren). Vorschlag per Knopf übernehmen oder auf der Personenseite unter „Bearbeiten“ ändern.');
   add('Geschlecht unbekannt', S.persons.filter(p => !p.sex).map(p => link(p)), 'Wird für Begriffe wie „Tante“ statt „Onkel/Tante“ gebraucht. Beim Einlesen wurde es aus dem Vornamen geschätzt – bitte stichprobenartig prüfen.');
   const total = groups.reduce((n, g) => n + g.items.length, 0);
   at.innerHTML = `<p class="muted">${total} Auffälligkeiten – nichts davon ist ein Fehler im Programm, nur Hinweise zur Datenpflege.</p>
     ${groups.filter(g => g.items.length).map(g => `<div class="card check-group"><h3>${esc(g.title)} <span class="pill">${g.items.length}</span></h3>${g.hint ? `<p class="hint" style="margin:0 0 8px">${esc(g.hint)}</p>` : ''}<ul class="check-list">${g.items.map(i => `<li>${i}</li>`).join('')}</ul></div>`).join('')}`;
+  at.querySelectorAll('[data-fixop]').forEach(b => b.addEventListener('click', async () => {
+    const [kid, op] = b.dataset.fixop.split(':');
+    b.disabled = true;
+    try { await api('PATCH', `/api/personen/${kid}`, { fields: {}, otherParentId: op }); toast('Zugeordnet'); await loadData(); adminChecks(at); }
+    catch (err) { toast(err.message, true); b.disabled = false; }
+  }));
 }
 
 function adminData(at) {
