@@ -28,6 +28,33 @@ function upcomingWeddings(days = 366) {
   }
   return out;
 }
+// Todestage aller Verstorbenen mit vollständigem Sterbedatum
+function upcomingDeathDays(days = 366) {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const out = [];
+  for (const p of S.persons) {
+    const f = parseFull(p.death); if (!f) continue;
+    const next = nextOccurrence(f, today);
+    const inDays = Math.round((next - today) / 864e5);
+    const years = next.getFullYear() - f.y;
+    if (inDays <= days && years > 0) out.push({ memorial: true, p, next, inDays, years });
+  }
+  return out;
+}
+function memorialRow(m) {
+  const rel = shortRelToMe(m.p.id);
+  return `<a class="bday-row mem${m.inDays === 0 ? ' today' : ''}" href="#/p/${esc(m.p.id)}">
+    <div class="bday-date"><b>${m.next.getDate()}</b><span>${MON3[m.next.getMonth()]}</span></div>
+    ${avatar(m.p)}
+    <div class="who">${esc(fullName(m.p))} <span class="kind-tag mem">† ${m.years}. Todestag</span><small>${esc([lifespan(m.p), rel].filter(Boolean).join(' · '))}</small></div>
+    <span class="when">${whenText(m.inDays)}</span></a>`;
+}
+// Alle Gedenktage gemischt: Geburtstage, Hochzeitstage, Todestage
+function upcomingDays(days, { weddings = true, deaths = true } = {}) {
+  return [...upcomingBirthdays(days), ...(weddings ? upcomingWeddings(days) : []), ...(deaths ? upcomingDeathDays(days) : [])]
+    .sort((a, b) => a.inDays - b.inDays || (a.memorial ? 1 : 0) - (b.memorial ? 1 : 0));
+}
+
 function coupleName(a, b) {
   return a.lastName && a.lastName === b.lastName ? `${a.firstName.split(' ')[0]} & ${b.firstName.split(' ')[0]} ${a.lastName}` : `${fullName(a)} & ${fullName(b)}`;
 }
@@ -36,7 +63,7 @@ function weddingRow(w) {
   return `<a class="bday-row wed${w.inDays === 0 ? ' today' : ''}" href="#/p/${esc(w.a.id)}">
     <div class="bday-date"><b>${w.next.getDate()}</b><span>${MON3[w.next.getMonth()]}</span></div>
     <span class="mono ring" aria-hidden="true">⚭</span>
-    <div class="who">${esc(coupleName(w.a, w.b))}${special ? ` <span class="pill warn">${esc(special)}</span>` : ''}<small>${w.years}. Hochzeitstag</small></div>
+    <div class="who">${esc(coupleName(w.a, w.b))} <span class="kind-tag wed">⚭ ${w.years}. Hochzeitstag</span>${special ? ` <span class="pill warn">${esc(special)}</span>` : ''}<small>verheiratet seit ${esc(w.b.marriage)}</small></div>
     <span class="when${w.inDays < 7 ? ' soon' : ''}">${whenText(w.inDays)}</span></a>`;
 }
 

@@ -531,6 +531,7 @@ function whenText(n) { return n === 0 ? 'heute' : n === 1 ? 'morgen' : n < 7 ? `
 const isRoundAge = (n) => n >= 18 && (n % 10 === 0 || [18, 25, 75, 85, 95].includes(n));
 function bdayRow(b, showRel = true) {
   if (b.wedding) return weddingRow(b);
+  if (b.memorial) return memorialRow(b);
   const rel = showRel ? shortRelToMe(b.p.id) : null;
   return `<a class="bday-row${b.inDays === 0 ? ' today' : ''}" href="#/p/${esc(b.p.id)}">
     <div class="bday-date"><b>${b.next.getDate()}</b><span>${MON3[b.next.getMonth()]}</span></div>
@@ -554,7 +555,7 @@ function viewHome(main) {
   const living = S.persons.filter(isLiving).length;
   const firstYear = Math.min(...S.persons.filter(p => p.kind !== 'origin').map(p => yearOf(p.birth) || 9999));
   const roots = S.roots.map(r => [r, ...(S.partners.get(r.id) || [])]).flat();
-  const bdays = upcomingBirthdays(30).slice(0, 7);
+  const bdays = upcomingDays(30).slice(0, 10);
   const minUpd = S.persons.reduce((m, p) => (p.updatedAt && p.updatedAt < m ? p.updatedAt : m), '9999');
   const recent = S.persons.filter(p => p.updatedAt && p.updatedAt > minUpd).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 6);
   const me = S.me && S.byId.get(S.me);
@@ -574,9 +575,10 @@ function viewHome(main) {
       <div class="grid">
         ${!me ? `<div class="card" style="border-color:var(--brick)"><h2>Wer bist du?</h2><p style="margin:0 0 12px;color:var(--ink-2)">Wähle dich einmal aus – dann siehst du bei jeder Person, wie ihr verwandt seid.</p><button class="btn primary" id="pickMe">Mich auswählen</button></div>` :
         `<div class="card"><h2>Hallo ${esc(me.firstName.split(' ')[0])}</h2><div class="btn-row"><a class="btn primary" href="#/baum/${esc(me.id)}">Mich im Stammbaum zeigen</a><a class="btn" href="#/p/${esc(me.id)}">Meine Seite</a><a class="btn" href="#/verwandt/${esc(me.id)}">Verwandtschaft berechnen</a></div></div>`}
-        <div class="card"><h2>Geburtstage in den nächsten 30 Tagen</h2>
-          ${bdays.length ? bdays.map(b => bdayRow(b)).join('') : '<div class="empty">Keine in den nächsten 30 Tagen.</div>'}
-          <div style="margin-top:10px"><a href="#/geburtstage">Alle Geburtstage &amp; Kalender-Abo →</a></div>
+        <div class="card"><h2>Die nächsten 30 Tage</h2>
+          <div class="kind-legend"><span>🎂 Geburtstag</span><span class="kind-tag wed">⚭ Hochzeitstag</span><span class="kind-tag mem">† Todestag</span></div>
+          ${bdays.length ? bdays.map(b => bdayRow(b)).join('') : '<div class="empty">Keine Termine in den nächsten 30 Tagen.</div>'}
+          <div style="margin-top:10px"><a href="#/geburtstage">Alle Termine &amp; Kalender-Abo →</a></div>
         </div>
       </div>
       <div class="grid">
@@ -1158,14 +1160,14 @@ function viewList(main) {
 // ================= Geburtstage =================
 function viewBirthdays(main) {
   const showWed = LS.get('stb.weddings', true);
-  const all = [...upcomingBirthdays(366), ...(showWed ? upcomingWeddings(366) : [])].sort((a, b) => a.inDays - b.inDays);
-  const showDeath = LS.get('stb.deathdays', false);
+  const showDeath = LS.get('stb.deathdays2', true);
+  const all = upcomingDays(366, { weddings: showWed, deaths: showDeath });
   const byMonth = new Map();
   for (const b of all) { const k = b.next.getFullYear() * 12 + b.next.getMonth(); if (!byMonth.has(k)) byMonth.set(k, []); byMonth.get(k).push(b); }
   const icsUrl = S.icsPath ? location.origin + S.icsPath : '';
   const webcal = icsUrl.replace(/^https?:/, 'webcal:');
   let memorial = [];
-  if (showDeath) {
+  if (false) {
     const t = new Date(); t.setHours(0, 0, 0, 0);
     memorial = S.persons.filter(p => parseFull(p.death)).map(p => {
       const f = parseFull(p.death); let n = new Date(t.getFullYear(), f.m - 1, f.d); if (n < t) n = new Date(t.getFullYear() + 1, f.m - 1, f.d);
@@ -1174,11 +1176,11 @@ function viewBirthdays(main) {
   }
   const noDate = S.persons.filter(p => isLiving(p) && !parseFull(p.birth)).length;
   main.innerHTML = `<div class="page">
-    <div class="page-head"><div><div class="eyebrow">Die nächsten zwölf Monate</div><h1>Geburtstage &amp; Jubiläen</h1></div>
-      <div class="btn-row"><label class="check"><input type="checkbox" id="wd"${showWed ? ' checked' : ''}> Hochzeitstage</label><label class="check"><input type="checkbox" id="dd"${showDeath ? ' checked' : ''}> Gedenktage</label></div></div>
+    <div class="page-head"><div><div class="eyebrow">Die nächsten zwölf Monate</div><h1>Geburts-, Hochzeits- &amp; Todestage</h1></div>
+      <div class="btn-row"><label class="check"><input type="checkbox" id="wd"${showWed ? ' checked' : ''}> Hochzeitstage</label><label class="check"><input type="checkbox" id="dd"${showDeath ? ' checked' : ''}> Todestage</label></div></div>
     <div class="grid cal-grid">
       <div>
-        ${showDeath ? `<div class="card" style="margin-bottom:20px"><h2>Gedenktage (nächste 60 Tage)</h2>${memorial.length ? memorial.map(m => `<a class="bday-row" href="#/p/${esc(m.p.id)}"><div class="bday-date"><b>${m.next.getDate()}</b><span>${MON3[m.next.getMonth()]}</span></div>${avatar(m.p)}<div class="who">${esc(fullName(m.p))}<small>${m.years}. Todestag</small></div><span class="when">${whenText(m.inDays)}</span></a>`).join('') : '<div class="empty">Keine.</div>'}</div>` : ''}
+        ${false ? `<div class="card" style="margin-bottom:20px"><h2>Gedenktage (nächste 60 Tage)</h2>${memorial.length ? memorial.map(m => `<a class="bday-row" href="#/p/${esc(m.p.id)}"><div class="bday-date"><b>${m.next.getDate()}</b><span>${MON3[m.next.getMonth()]}</span></div>${avatar(m.p)}<div class="who">${esc(fullName(m.p))}<small>${m.years}. Todestag</small></div><span class="when">${whenText(m.inDays)}</span></a>`).join('') : '<div class="empty">Keine.</div>'}</div>` : ''}
         ${[...byMonth.entries()].map(([k, list]) => `<section class="month card"><h2>${MONTHS[k % 12]} <span>${Math.floor(k / 12)}</span></h2>${list.map(b => bdayRow(b)).join('')}</section>`).join('')}
         ${noDate ? `<p class="hint">${noDate} Personen ohne vollständiges Geburtsdatum werden nicht angezeigt.</p>` : ''}
       </div>
@@ -1195,7 +1197,7 @@ function viewBirthdays(main) {
         <p class="hint">Die Adresse bitte nur innerhalb der Familie teilen.</p>
       </aside>
     </div></div>`;
-  $('#dd').onchange = (e) => { LS.set('stb.deathdays', e.target.checked); viewBirthdays(main); };
+  $('#dd').onchange = (e) => { LS.set('stb.deathdays2', e.target.checked); viewBirthdays(main); };
   $('#wd').onchange = (e) => { LS.set('stb.weddings', e.target.checked); viewBirthdays(main); };
   $('#copyIcs').onclick = async () => {
     try { await navigator.clipboard.writeText(icsUrl); toast('Adresse kopiert'); } catch { $('#icsUrl').select(); toast('Bitte manuell kopieren'); }

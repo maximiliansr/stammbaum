@@ -539,3 +539,11 @@ select.input.sm, .input.sm { padding: 4px 8px; font-size: 13px; width: auto; }
 .ged-a { align-items: flex-start; padding: 6px 0; border-bottom: 1px solid var(--line-2); }
 .ged-a small { color: var(--ink-3); }
 .ged-un li { margin-bottom: 6px; }
+
+/* ---------- Termin-Arten ---------- */
+.kind-tag { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 9px; vertical-align: 1px; margin-left: 4px; white-space: nowrap; }
+.kind-tag.wed { background: var(--weser-soft); color: var(--weser); }
+.kind-tag.mem { background: var(--surface-2); color: var(--ink-3); border: 1px solid var(--line); }
+.kind-legend { display: flex; gap: 8px; flex-wrap: wrap; font-size: 12px; color: var(--ink-3); margin: -6px 0 6px; align-items: center; }
+.kind-legend .kind-tag { margin-left: 0; }
+.bday-row.mem .who { color: var(--ink-2); }
