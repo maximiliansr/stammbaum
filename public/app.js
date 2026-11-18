@@ -1059,7 +1059,8 @@ function openPersonForm({ mode, person, anchor, role, relation }) {
       <div class="full"><button type="button" class="btn sm" id="addCustom">+ Eigenes Feld (z. B. Beruf, E-Mail, Spitzname)</button></div>
       <label class="fld full"><span>Notizen</span><textarea class="input" name="notes">${esc(p.notes || '')}</textarea></label>
       <div class="form-sep">Foto</div>
-      <div class="full photo-edit">${mode === 'edit' ? avatar(p) : '<span class="mono">+</span>'}<div><input type="file" accept="image/*" id="photoIn"><div class="hint">Wird automatisch verkleinert.</div>
+      <div class="full photo-edit">${mode === 'edit' ? avatar(p) : '<span class="mono">+</span>'}<div><input type="file" accept="image/*" id="photoIn"><div class="hint">Wird automatisch verkleinert · Bild auch per ⌘V / Strg+V einfügen.</div>
+        <button type="button" class="btn sm" id="photoEdit" style="margin-top:6px" hidden>⟳ Drehen / ✂︎ Zuschneiden</button>
         ${admin && mode === 'edit' && p.hasPhoto ? '<button type="button" class="btn sm danger" id="delPhoto" style="margin-top:6px">Foto entfernen</button>' : ''}</div></div>
       ${admin && mode === 'edit' ? adminStructureFields(p) : ''}
       ${!admin ? `<div class="form-sep">Von dir</div>
@@ -1105,11 +1106,14 @@ function openPersonForm({ mode, person, anchor, role, relation }) {
   $('[data-cancel]', dlg).onclick = () => dlg.close();
   $('#addCustom', dlg).onclick = () => { $('#customRows', dlg).insertAdjacentHTML('beforeend', customRow({ label: '', value: '' })); };
   $('#customRows', dlg).addEventListener('click', (e) => { if (e.target.closest('[data-rmc]')) e.target.closest('.custom-row').remove(); });
+  let photoSrc = mode === 'edit' && p.hasPhoto ? `/api/fotos/${p.id}.jpg?v=${encodeURIComponent(p.updatedAt || '')}` : null;
   const takePhoto = async (file) => {
     if (!file) return;
-    try { photo = await resizePhoto(file); $('.photo-edit .mono', dlg).innerHTML = `<img src="${photo}" alt="">`; }
+    try { photo = await resizePhoto(file); photoSrc = file; $('.photo-edit .mono', dlg).innerHTML = `<img src="${photo}" alt="">`; $('#photoEdit', dlg).hidden = false; }
     catch (err) { toast(err.message, true); }
   };
+  $('#photoEdit', dlg).hidden = !photoSrc;
+  $('#photoEdit', dlg).onclick = async () => { const nf = photoSrc && await editImage(photoSrc, { aspect: 1, title: 'Foto drehen & zuschneiden' }); if (nf) takePhoto(nf); };
   $('#photoIn', dlg).onchange = (e) => takePhoto(e.target.files[0]);
   // Foto aus der Zwischenablage einfügen
   dlg.addEventListener('paste', (e) => { const f = clipboardImage(e); if (f && /^image\//.test(f.type)) { e.preventDefault(); takePhoto(f); toast('Foto eingefügt'); } });
@@ -1414,7 +1418,7 @@ function factSources(p, fact, spouse) {
   return `<span class="fact-src">${list.map(s => `<button type="button" class="src-pill" data-src="${esc(s.id)}" title="${esc(s.title)}">📎 ${esc(s.kind === 'Sonstiges' ? s.title : s.kind)}</button>`).join('')}<button type="button" class="src-add" data-addsrc="${esc(fact)}"${spouse ? ` data-spouse="${esc(spouse.id)}"` : ''} title="Beleg für ${esc(FACT_TXT[fact])} hinzufügen – Bild auch per Einfügen (⌘V / Strg+V)">＋ Beleg</button></span>`;
 }
 function sourceTile(s) {
-  const thumb = s.hasThumb ? `<img src="/api/quellen/${esc(s.id)}/vorschau" alt="" loading="lazy">` : `<span class="src-doc">${s.mime === 'application/pdf' ? 'PDF' : 'Bild'}</span>`;
+  const thumb = s.hasThumb ? `<img src="/api/quellen/${esc(s.id)}/vorschau?v=${encodeURIComponent(s.updatedAt || s.createdAt || '')}" alt="" loading="lazy">` : `<span class="src-doc">${s.mime === 'application/pdf' ? 'PDF' : 'Bild'}</span>`;
   return `<button class="src-tile" data-src="${esc(s.id)}" title="${esc(s.title)}">${thumb}<span class="src-cap"><b>${esc(s.title)}</b><small>${esc([s.kind !== s.title ? s.kind : '', s.date, (s.facts || []).map(f => FACT_TXT[f]).join(', ')].filter(Boolean).join(' · '))}</small></span></button>`;
 }
 function clipboardImage(e) {
@@ -1456,6 +1460,7 @@ function openSourceForm({ person, source, fact, extraIds = [], pasted }) {
       <p>Foto oder Scan einer Traueranzeige, eines Stammbuchauszugs, einer Urkunde, eines alten Fotos … ${admin ? '' : 'Die Verwaltung prüft die Quelle, bevor sie sichtbar wird.'}</p></div>
     <div class="dlg-body"><div class="form-grid">
       ${edit ? '' : `<div class="full"><label class="drop" id="drop"><input type="file" accept="image/*,application/pdf" id="srcFile"><span id="dropTxt"><b>Bild einfügen (⌘V / Strg+V), hierher ziehen oder Datei wählen</b><br><small>JPG, PNG oder PDF · Bilder werden automatisch passend verkleinert</small></span></label></div>`}
+      ${edit ? '' : '<div class="full img-tools" id="imgTools" hidden><button type="button" class="btn sm" id="imgEdit">⟳ Drehen / ✂︎ Zuschneiden</button></div>'}
       <div class="fld full"><span>Belegt</span><div class="fact-opts">${Object.entries(FACT_TXT).map(([k, t]) => `<label class="ruf-opt"><input type="checkbox" name="facts" value="${k}"${(s.facts || []).includes(k) ? ' checked' : ''}><span>${t}</span></label>`).join('')}</div></div>
       <label class="fld"><span>Art</span><select class="input" name="kind">${S.sourceKinds.map(k => `<option${k === s.kind ? ' selected' : ''}>${esc(k)}</option>`).join('')}</select></label>
       <label class="fld"><span>Datum des Dokuments</span><input class="input" name="date" value="${esc(s.date)}" placeholder="TT.MM.JJJJ oder JJJJ" data-date></label>
@@ -1474,9 +1479,12 @@ function openSourceForm({ person, source, fact, extraIds = [], pasted }) {
     attachPicker($('#tagAdd', dlg), (x) => { if (!ids.includes(x.id)) ids.push(x.id); drawTags(); }, { keepText: false });
     $('#tagList', dlg).addEventListener('click', (e) => { const r = e.target.closest('[data-rm]'); if (r) { ids = ids.filter(i => i !== r.dataset.rm); drawTags(); } });
   }
+  let lastImage = null;
   const takeFile = async (f) => {
     if (!f) return;
     const txt = $('#dropTxt', dlg);
+    lastImage = /^image\//.test(f.type) ? f : null;
+    $('#imgTools', dlg).hidden = !lastImage;
     try {
       if (f.type === 'application/pdf') {
         if (f.size > 14 * 1024 * 1024) throw new Error('PDF ist zu groß (max. 14 MB)');
@@ -1499,6 +1507,7 @@ function openSourceForm({ person, source, fact, extraIds = [], pasted }) {
     drop.addEventListener('dragleave', () => drop.classList.remove('over'));
     drop.addEventListener('drop', (e) => { e.preventDefault(); drop.classList.remove('over'); takeFile(e.dataTransfer.files[0]); });
     if (pasted) takeFile(pasted);
+    $('#imgEdit', dlg).onclick = async () => { const nf = lastImage && await editImage(lastImage); if (nf) takeFile(nf); };
   }
   $('#srcDel', dlg)?.addEventListener('click', async () => {
     if (!confirm('Diese Quelle samt Datei löschen?')) return;
@@ -1524,7 +1533,7 @@ function openSourceForm({ person, source, fact, extraIds = [], pasted }) {
 
 function openSourceViewer(id) {
   const s = S.sources.find(x => x.id === id); if (!s) return;
-  const url = `/api/quellen/${encodeURIComponent(s.id)}/datei`;
+  const url = `/api/quellen/${encodeURIComponent(s.id)}/datei?v=${encodeURIComponent(s.updatedAt || s.createdAt || '')}`;
   const isPdf = s.mime === 'application/pdf';
   const people = (s.personIds || []).map(i => S.byId.get(i)).filter(Boolean);
   const dlg = dialog(`<div class="viewer">
@@ -1539,6 +1548,7 @@ function openSourceViewer(id) {
       <div class="btn-row" style="margin-top:10px">
         <a class="btn" href="${url}" target="_blank" rel="noopener">${isPdf ? 'Öffnen' : 'Originalgröße'}</a>
         ${isAdmin() ? '<button class="btn" data-ve>Bearbeiten</button>' : ''}
+        ${isAdmin() && !isPdf ? '<button class="btn" data-vi>⟳ Drehen / ✂︎ Zuschneiden</button>' : ''}
         <button class="btn" data-vc>Schließen</button>
       </div>
     </div></div>`);
@@ -1547,6 +1557,14 @@ function openSourceViewer(id) {
   $('#vImg', dlg)?.addEventListener('click', (e) => e.target.classList.toggle('zoomed'));
   dlg.addEventListener('click', (e) => { if (e.target.closest('.chip')) dlg.close(); });
   $('[data-ve]', dlg)?.addEventListener('click', () => { dlg.close(); openSourceForm({ person: people[0], source: s }); });
+  $('[data-vi]', dlg)?.addEventListener('click', async () => {
+    const nf = await editImage(url); if (!nf) return;
+    try {
+      const file = await resizeImage(nf, 2600, 0.86), thumb = await resizeImage(nf, 420, 0.8);
+      await api('PUT', `/api/quellen/${s.id}/datei`, { file, thumb });
+      toast('Bild gespeichert'); dlg.close(); await refresh(); openSourceViewer(s.id);
+    } catch (err) { toast(err.message, true); }
+  });
 }
 
 // ================= Zeitleiste =================

@@ -619,6 +619,21 @@ route('PUT', '/api/quellen/([a-zA-Z0-9_-]+)', 'admin', (ctx, m) => {
   return { source: s };
 });
 
+// Bild einer Quelle ersetzen (gedreht/zugeschnitten)
+route('PUT', '/api/quellen/([a-zA-Z0-9_-]+)/datei', 'admin', (ctx, m) => {
+  const s = store.doc.sources.find(x => x.id === m[1]);
+  if (!s) throw new HttpError(404, 'Quelle nicht gefunden');
+  const b = ctx.body || {};
+  const f = decodeFile(b.file);
+  if (f.mime !== 'image/jpeg' || s.mime !== 'image/jpeg') throw new HttpError(400, 'Nur Bilder lassen sich bearbeiten');
+  fs.writeFileSync(store.sourcePath(s.id, s.mime), f.buf);
+  if (b.thumb) { fs.writeFileSync(store.sourceThumbPath(s.id), decodeJpeg(b.thumb)); s.hasThumb = true; }
+  s.updatedAt = new Date().toISOString();
+  store.save();
+  store.log({ who: 'Admin', action: 'Quellbild bearbeitet', personId: s.personIds[0], name: s.title });
+  return { source: s };
+});
+
 route('DELETE', '/api/quellen/([a-zA-Z0-9_-]+)', 'admin', (ctx, m) => {
   const s = store.doc.sources.find(x => x.id === m[1]);
   if (!s) throw new HttpError(404, 'Quelle nicht gefunden');

@@ -340,6 +340,8 @@ test('Quellen belegen einzelne Angaben (auch im GEDCOM)', async () => {
   assert.deepEqual(r.data.source.facts, ['marriage']);
   const r2 = await T.req('POST', '/api/quellen', { source: { title: 'Geburtsurkunde Peter', kind: 'Geburtsurkunde', facts: ['birth'] }, personIds: [peter.id], file: jpg });
   assert.equal(r2.status, 200);
+  const rep = await T.req('PUT', `/api/quellen/${r2.data.source.id}/datei`, { file: jpg, thumb: jpg });
+  assert.equal(rep.status, 200); assert.ok(rep.data.source.updatedAt);
   const exp = (await T.req('GET', '/api/export.ged')).data;
   assert.match(exp, /1 BIRT\r\n2 DATE [^\r]+\r\n(?:2 PLAC [^\r]+\r\n)?2 SOUR @S2@/);
   assert.match(exp, /1 MARR\r\n2 DATE [^\r]+\r\n(?:2 PLAC [^\r]+\r\n)?2 SOUR @S1@/);

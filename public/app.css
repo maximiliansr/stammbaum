@@ -591,3 +591,12 @@ u.ruf { text-decoration: underline; text-decoration-thickness: 1.5px; text-under
 .fact-opts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
 .fact-opts .ruf-opt input:checked + span { text-decoration: none; }
 .drop.over { border-color: var(--weser); background: var(--weser-soft); }
+
+/* ---------- Bild drehen & zuschneiden ---------- */
+.imged-stage { padding: 14px 22px; display: grid; place-items: center; background: var(--surface-2); }
+.imged-stage canvas { max-width: 100%; height: auto; touch-action: none; cursor: crosshair; border-radius: 4px; box-shadow: var(--shadow); }
+.imged-foot { flex-wrap: wrap; gap: 8px; }
+.imged-foot .left { margin-right: auto; align-items: center; }
+.img-tools { display: flex; justify-content: center; margin-top: 8px; }
+
+[hidden] { display: none !important; }

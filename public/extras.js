@@ -577,3 +577,102 @@ function renderGedPlan() {
     } catch (err) { toast(err.message, true); e.target.disabled = false; e.target.textContent = 'Ausgewählte übernehmen'; }
   };
 }
+
+// ================= Bilder drehen & zuschneiden =================
+// editImage(fileOderUrl, { aspect }) → Promise<File|null>
+function editImage(input, { aspect = 0, title = 'Bild drehen & zuschneiden' } = {}) {
+  return new Promise(async (resolve) => {
+    let img;
+    try {
+      const url = typeof input === 'string' ? input : URL.createObjectURL(input);
+      img = await new Promise((ok, bad) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => bad(new Error('Bild konnte nicht geladen werden')); i.src = url; });
+    } catch (e) { toast(e.message, true); resolve(null); return; }
+    let rot = 0, base, crop, done = false;
+    const dlg = dialog(`<div class="imged">
+      <div class="dlg-head"><h2>${esc(title)}</h2><p>Rahmen ziehen zum Zuschneiden · Ecken anfassen zum Ändern · Rahmen verschieben</p></div>
+      <div class="imged-stage"><canvas id="ieC"></canvas></div>
+      <div class="dlg-foot imged-foot">
+        <div class="btn-row left">
+          <button type="button" class="btn" data-r="-90" title="Nach links drehen">⟲ Links</button>
+          <button type="button" class="btn" data-r="90" title="Nach rechts drehen">⟳ Rechts</button>
+          <button type="button" class="btn ghost" data-reset>Ganzes Bild</button>
+          ${aspect ? '' : '<label class="check" style="margin-left:6px"><input type="checkbox" id="ieSq"> quadratisch</label>'}
+        </div>
+        <button type="button" class="btn" data-cancel>Abbrechen</button>
+        <button type="button" class="btn primary" data-ok>Übernehmen</button>
+      </div></div>`);
+    dlg.classList.add('wide');
+    const cv = $('#ieC', dlg), ctx = cv.getContext('2d');
+    let scale = 1;
+    const ratio = () => aspect || ($('#ieSq', dlg)?.checked ? 1 : 0);
+    function rebuild() {
+      const r = ((rot % 360) + 360) % 360, w = img.naturalWidth, h = img.naturalHeight;
+      base = document.createElement('canvas');
+      base.width = r % 180 ? h : w; base.height = r % 180 ? w : h;
+      const b = base.getContext('2d');
+      b.translate(base.width / 2, base.height / 2); b.rotate(r * Math.PI / 180); b.drawImage(img, -w / 2, -h / 2);
+      const stage = $('.imged-stage', dlg);
+      const maxW = Math.min(stage.clientWidth || 760, 900), maxH = Math.min(window.innerHeight * 0.62, 640);
+      scale = Math.min(1, maxW / base.width, maxH / base.height);
+      cv.width = Math.round(base.width * scale); cv.height = Math.round(base.height * scale);
+      resetCrop();
+    }
+    function resetCrop() {
+      const a = ratio();
+      if (!a) crop = { x: 0, y: 0, w: cv.width, h: cv.height };
+      else { const w = Math.min(cv.width, cv.height * a) * 0.9; crop = { w, h: w / a, x: (cv.width - w) / 2, y: (cv.height - w / a) / 2 }; }
+      draw();
+    }
+    function draw() {
+      ctx.clearRect(0, 0, cv.width, cv.height);
+      ctx.drawImage(base, 0, 0, cv.width, cv.height);
+      ctx.save(); ctx.fillStyle = 'rgba(0,0,0,.5)';
+      ctx.beginPath(); ctx.rect(0, 0, cv.width, cv.height); ctx.rect(crop.x, crop.y, crop.w, crop.h); ctx.fill('evenodd');
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.setLineDash([6, 4]); ctx.strokeRect(crop.x + 1, crop.y + 1, crop.w - 2, crop.h - 2);
+      ctx.setLineDash([]); ctx.fillStyle = '#fff';
+      for (const [hx, hy] of corners()) ctx.fillRect(hx - 6, hy - 6, 12, 12);
+      ctx.restore();
+    }
+    const isFull = () => crop.x <= 1 && crop.y <= 1 && crop.w >= cv.width - 2 && crop.h >= cv.height - 2;
+    const corners = () => [[crop.x, crop.y], [crop.x + crop.w, crop.y], [crop.x, crop.y + crop.h], [crop.x + crop.w, crop.y + crop.h]];
+    const pos = (e) => { const r = cv.getBoundingClientRect(); return { x: (e.clientX - r.left) * cv.width / r.width, y: (e.clientY - r.top) * cv.height / r.height }; };
+    const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+    let drag = null;
+    cv.addEventListener('pointerdown', (e) => {
+      const p = pos(e); cv.setPointerCapture(e.pointerId);
+      const tol = 14 * cv.width / cv.getBoundingClientRect().width;
+      const ci = corners().findIndex(([hx, hy]) => Math.abs(hx - p.x) < tol && Math.abs(hy - p.y) < tol);
+      if (ci >= 0) { const c = corners()[3 - ci]; drag = { mode: 'new', ox: c[0], oy: c[1] }; }
+      else if (!isFull() && p.x > crop.x && p.x < crop.x + crop.w && p.y > crop.y && p.y < crop.y + crop.h) drag = { mode: 'move', dx: p.x - crop.x, dy: p.y - crop.y };
+      else drag = { mode: 'new', ox: p.x, oy: p.y };
+    });
+    cv.addEventListener('pointermove', (e) => {
+      const p = pos(e);
+      if (!drag) { const tol = 14 * cv.width / cv.getBoundingClientRect().width; cv.style.cursor = corners().some(([hx, hy]) => Math.abs(hx - p.x) < tol && Math.abs(hy - p.y) < tol) ? 'nwse-resize' : (!isFull() && p.x > crop.x && p.x < crop.x + crop.w && p.y > crop.y && p.y < crop.y + crop.h) ? 'move' : 'crosshair'; return; }
+      if (drag.mode === 'move') { crop.x = clamp(p.x - drag.dx, 0, cv.width - crop.w); crop.y = clamp(p.y - drag.dy, 0, cv.height - crop.h); }
+      else {
+        const x = clamp(p.x, 0, cv.width); let y = clamp(p.y, 0, cv.height);
+        let w = x - drag.ox, h = y - drag.oy;
+        const a = ratio();
+        if (a) { const s = Math.min(Math.abs(w), Math.abs(h) * a); w = Math.sign(w || 1) * s; h = Math.sign(h || 1) * s / a;
+          if (drag.oy + h < 0 || drag.oy + h > cv.height || drag.ox + w < 0 || drag.ox + w > cv.width) return; }
+        crop = { x: Math.min(drag.ox, drag.ox + w), y: Math.min(drag.oy, drag.oy + h), w: Math.abs(w), h: Math.abs(h) };
+      }
+      draw();
+    });
+    const end = () => { if (drag && (crop.w < 12 || crop.h < 12)) resetCrop(); drag = null; };
+    cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
+    $$('[data-r]', dlg).forEach(b => b.onclick = () => { rot += Number(b.dataset.r); rebuild(); });
+    $('[data-reset]', dlg).onclick = resetCrop;
+    $('#ieSq', dlg)?.addEventListener('change', resetCrop);
+    $('[data-cancel]', dlg).onclick = () => dlg.close();
+    dlg.addEventListener('close', () => { if (!done) resolve(null); });
+    $('[data-ok]', dlg).onclick = () => {
+      const sx = Math.round(crop.x / scale), sy = Math.round(crop.y / scale), sw = Math.max(1, Math.round(crop.w / scale)), sh = Math.max(1, Math.round(crop.h / scale));
+      const out = document.createElement('canvas'); out.width = sw; out.height = sh;
+      const o = out.getContext('2d'); o.fillStyle = '#fff'; o.fillRect(0, 0, sw, sh); o.drawImage(base, sx, sy, sw, sh, 0, 0, sw, sh);
+      out.toBlob((blob) => { done = true; dlg.close(); resolve(new File([blob], 'bearbeitet.jpg', { type: 'image/jpeg' })); }, 'image/jpeg', 0.92);
+    };
+    requestAnimationFrame(rebuild);
+  });
+}
