@@ -346,3 +346,29 @@ test('Quellen belegen einzelne Angaben (auch im GEDCOM)', async () => {
   assert.match(exp, /1 BIRT\r\n2 DATE [^\r]+\r\n(?:2 PLAC [^\r]+\r\n)?2 SOUR @S2@/);
   assert.match(exp, /1 MARR\r\n2 DATE [^\r]+\r\n(?:2 PLAC [^\r]+\r\n)?2 SOUR @S1@/);
 });
+
+test('Herkunftsfamilie: Partner/in und Kinder für Geschwister und weitere Angehörige', async () => {
+  const T = await startServer();
+  const d = (await T.req('GET', '/api/data')).data;
+  const sab = d.persons.find(p => p.firstName === 'Sabine');
+  const mk = async (body) => { const r = await T.req('POST', '/api/personen', body); assert.equal(r.status, 200, JSON.stringify(r.data)); return r.data.person; };
+  const vater = await mk({ kind: 'origin', role: 'parent', anchorId: sab.id, fields: { firstName: 'Hans', lastName: 'Wolff', sex: 'm' } });
+  const opa = await mk({ kind: 'origin', role: 'relative', relation: 'parent', anchorId: vater.id, fields: { firstName: 'Opa', lastName: 'Wolff', sex: 'm' } });
+  const onkel = await mk({ kind: 'origin', role: 'relative', relation: 'sibling', anchorId: vater.id, fields: { firstName: 'Josef', lastName: 'Wolff', sex: 'm' } });
+  const tante = await mk({ kind: 'origin', role: 'relative', relation: 'partner', anchorId: onkel.id, fields: { firstName: 'Maria', lastName: 'Wolff', sex: 'w', marriage: '1950' } });
+  assert.equal(tante.partnerOfId, onkel.id); assert.equal(tante.role, 'relative'); assert.equal(tante.marriage, '1950');
+  const cousine = await mk({ kind: 'origin', role: 'relative', relation: 'child', anchorId: onkel.id, otherParentId: tante.id, fields: { firstName: 'Petra', lastName: 'Wolff', sex: 'w' } });
+  assert.deepEqual(cousine.parentIds, [onkel.id, tante.id]);
+  const bruder = await mk({ kind: 'origin', role: 'sibling', anchorId: sab.id, fields: { firstName: 'Bernd', lastName: 'Wolff', sex: 'm' } });
+  const schwaegerin = await mk({ kind: 'origin', role: 'relative', relation: 'partner', anchorId: bruder.id, fields: { firstName: 'Gabi', lastName: 'Wolff', sex: 'w' } });
+  const neffe = await mk({ kind: 'origin', role: 'relative', relation: 'child', anchorId: bruder.id, otherParentId: 'none', fields: { firstName: 'Tim', lastName: 'Wolff', sex: 'm' } });
+  assert.deepEqual(neffe.parentIds, [bruder.id]);
+  // Partner/in eines Elternteils bleibt partnerOfParent
+  const stief = await mk({ kind: 'origin', role: 'relative', relation: 'partner', anchorId: vater.id, fields: { firstName: 'Erna', lastName: 'X', sex: 'w' } });
+  assert.equal(stief.role, 'partnerOfParent');
+  // GEDCOM: Onkel + Tante als Familie mit Kind
+  const exp = (await T.req('GET', '/api/export.ged')).data;
+  const fam = exp.split('\r\n0 ').find(b => b.includes('CHIL') && b.includes(`HUSB`) && exp.includes(`_STB_ID ${cousine.id}`) && b.match(/HUSB @I\d+@/) && b.includes('1 MARR'));
+  assert.ok(fam, 'Familie Onkel/Tante fehlt im GEDCOM');
+  void opa; void schwaegerin;
+});

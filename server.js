@@ -280,9 +280,17 @@ function createPerson({ kind, anchorId, fields, otherParentId, role, parentIds, 
     }
     if (p.role === 'sibling') p.parentIds = originParentIds(partner.id, parentIds);
     if (p.role === 'relative') {
-      // Weitere Angehörige: Elternteil oder Geschwister einer Person der Herkunftsfamilie
-      if (anchor.kind !== 'origin' || !['parent', 'partnerOfParent', 'relative'].includes(anchor.role)) throw new HttpError(400, 'Nur bei Eltern oder weiteren Angehörigen der Herkunftsfamilie möglich');
-      if (relation === 'parent') {
+      // Weitere Angehörige: Elternteil, Geschwister, Partner/in oder Kind einer Person der Herkunftsfamilie
+      if (anchor.kind !== 'origin') throw new HttpError(400, 'Nur bei Personen der Herkunftsfamilie möglich');
+      if (['parent', 'sibling'].includes(relation) && !['parent', 'partnerOfParent', 'relative'].includes(anchor.role)) throw new HttpError(400, 'Nur bei Eltern oder weiteren Angehörigen der Herkunftsfamilie möglich');
+      if (relation === 'partner') {
+        if (anchor.role === 'parent') { p.role = 'partnerOfParent'; p.partnerOfId = anchor.id; }
+        else p.partnerOfId = anchor.id;
+      } else if (relation === 'child') {
+        if (anchor.role === 'parent') throw new HttpError(400, 'Kinder der Eltern bitte als Geschwister eintragen');
+        const mates = store.doc.persons.filter(x => x.kind === 'origin' && (x.partnerOfId === anchor.id || x.id === anchor.partnerOfId)).map(x => x.id);
+        p.parentIds = [anchor.id, ...(otherParentId && mates.includes(otherParentId) ? [otherParentId] : [])];
+      } else if (relation === 'parent') {
         const cur = (anchor.parentIds || []).filter(id => store.byId.has(id));
         if (cur.length >= 2) throw new HttpError(400, 'Es sind bereits zwei Eltern erfasst');
         p.order = 0;
@@ -462,10 +470,10 @@ route('POST', '/api/vorschlaege', 'family', (ctx) => {
     id: 's' + Date.now().toString(36) + crypto.randomBytes(2).toString('hex'),
     createdAt: new Date().toISOString(), status: 'offen', type, targetId: target.id,
     targetName: displayName(target), author, message: clean(b.message, 2000), fields,
-    otherParentId: type === 'child' ? clean(b.otherParentId, 40) || null : null, hasPhoto: false,
+    otherParentId: type === 'child' || (type === 'origin' && b.relation === 'child') ? clean(b.otherParentId, 40) || null : null, hasPhoto: false,
     role: type === 'origin' ? normRole(b.role) : undefined,
     parentIds: type === 'origin' && Array.isArray(b.parentIds) ? b.parentIds.map(x => clean(x, 40)).slice(0, 2) : undefined,
-    relation: type === 'origin' && ['parent', 'sibling'].includes(b.relation) ? b.relation : undefined,
+    relation: type === 'origin' && ['parent', 'sibling', 'partner', 'child'].includes(b.relation) ? b.relation : undefined,
     structure: type === 'edit' && b.structure ? { parentId: clean(b.structure.parentId, 40) || null, otherParentId: clean(b.structure.otherParentId, 40) || null,
       parentIds: Array.isArray(b.structure.parentIds) ? b.structure.parentIds.map(x => clean(x, 40)).slice(0, 2) : undefined } : undefined,
   };

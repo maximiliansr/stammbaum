@@ -128,6 +128,7 @@ function avatar(p, cls = '') {
 function relLabel(p) {
   if (p.kind === 'partner') return 'Partner/in von ' + fullName(S.byId.get(p.partnerOf));
   if (p.kind === 'origin' && p.role === 'partnerOfParent') return 'Partner/in von ' + fullName(S.byId.get(p.partnerOfId)) + ' (Familie von ' + fullName(S.byId.get(p.originOf)) + ')';
+  if (p.kind === 'origin' && p.role === 'relative' && p.partnerOfId) return G(p.sex, 'Partner', 'Partnerin', 'Partner/in') + ' von ' + fullName(S.byId.get(p.partnerOfId)) + ' (Familie von ' + fullName(S.byId.get(p.originOf)) + ')';
   if (p.kind === 'origin' && p.role === 'sibling' && isHalfOrigin(p)) return 'Halbgeschwister von ' + fullName(S.byId.get(p.originOf));
   if (p.kind === 'origin' && p.role === 'relative') { const Q = S.byId.get(p.originOf); const k = Q && kinship(Q.id, p.id); return (k && k.kind !== 'none' ? k.term : 'Angehörige/r') + ' von ' + fullName(Q); }
   if (p.kind === 'origin') return (ROLE_TXT[p.role] || 'Elternteil') + ' von ' + fullName(S.byId.get(p.originOf));
@@ -144,6 +145,8 @@ const ROLE_TXT = { parent: 'Elternteil', sibling: 'Geschwister', child: 'Kind au
 const originSibParents = (o) => (o.parentIds && o.parentIds.length ? o.parentIds.map(id => S.byId.get(id)).filter(Boolean) : originParents(o.originOf));
 const isHalfOrigin = (o) => !!(o.parentIds && o.parentIds.length) && originSibParents(o).map(x => x.id).sort().join() !== originParents(o.originOf).map(x => x.id).sort().join();
 const originKids = (partnerId) => (S.origins.get(partnerId) || []).filter(o => o.role === 'child');
+// Partner/innen weiterer Angehöriger der Herkunftsfamilie
+const originMates = (p) => (S.origins.get(p.originOf) || []).filter(o => o.role === 'relative' && o.partnerOfId === p.id);
 const originParents = (partnerId) => (S.origins.get(partnerId) || []).filter(o => o.role === 'parent');
 function parentsOf(p) {
   if (!p) return [];
@@ -165,7 +168,7 @@ function childrenOf(p) {
     const more = (S.origins.get(p.originOf) || []).filter(o => o.role !== 'sibling' && (o.parentIds || []).includes(p.id));
     return [...(p.role === 'parent' ? [S.byId.get(p.originOf)] : []), ...sibs, ...more].filter(Boolean);
   }
-  if (p.kind === 'origin') return [];
+  if (p.kind === 'origin') return (S.origins.get(p.originOf) || []).filter(o => o.role === 'relative' && (o.parentIds || []).includes(p.id));
   return [...(S.kids.get(p.partnerOf) || []).filter(k => k.otherParentId === p.id), ...originKids(p.id)];
 }
 function siblingsOf(p) {
@@ -192,7 +195,7 @@ function partnersOf(p) {
   if (p.kind === 'blood') return S.partners.get(p.id) || [];
   if (p.kind === 'origin' && p.role === 'parent') return [...originParents(p.originOf).filter(o => o.id !== p.id), ...(S.origins.get(p.originOf) || []).filter(o => o.role === 'partnerOfParent' && o.partnerOfId === p.id)];
   if (p.kind === 'origin' && p.role === 'partnerOfParent') return [S.byId.get(p.partnerOfId)].filter(Boolean);
-  if (p.kind === 'origin') return [];
+  if (p.kind === 'origin') return [...(p.partnerOfId ? [S.byId.get(p.partnerOfId)] : []), ...originMates(p)].filter(Boolean);
   const other = S.byId.get(p.partnerOf); return other ? [other] : [];
 }
 
@@ -282,6 +285,19 @@ function kinship(aId, bId) {
     const X = swap ? A : B, Y = swap ? B : A;           // X = Person der Herkunftsfamilie
     const Q = S.byId.get(X.originOf);                   // zugehörige/r Partner/in
     const sib = X.role === 'sibling';
+    if (Q && X.role === 'relative' && X.partnerOfId) {
+      const Z = S.byId.get(X.partnerOfId);
+      if (!swap) {
+        if (Z && Z.id === Y.id) return { term: G(X.sex, 'Ehemann', 'Ehefrau', 'Partner/in'), sentence: `${fullName(X)} ist mit ${fullName(Z)} verheiratet.`, kind: 'spouse' };
+        const kz = Z && kinship(Y.id, Z.id);
+        const zt = kz && kz.kind !== 'none' ? kz.term : null;
+        // Bruder → Schwager/Schwägerin, Onkel → Tante (angeheiratet), Großonkel → Großtante …
+        const inlaw = !zt ? null : /^(Bruder|Schwester|Geschwister)$/.test(zt) ? G(X.sex, 'Schwager', 'Schwägerin', 'Schwager/Schwägerin')
+          : /^((Ur)*[Gg]roß)?(onkel|tante|Onkel|Tante)$/.test(zt) && X.sex ? zt.replace(/(onkel|tante)$/i, (m) => { const w = X.sex === 'w' ? 'tante' : 'onkel'; return m[0] === m[0].toUpperCase() ? w[0].toUpperCase() + w.slice(1) : w; }) : null;
+        return { term: inlaw || `${G(X.sex, 'Partner', 'Partnerin', 'Partner/in')} von ${callName(Z)}${zt ? ` (${zt})` : ''}`, sentence: `${fullName(X)} ist ${G(X.sex, 'Partner', 'Partnerin', 'Partner/in')} von ${fullName(Z)}.`, kind: 'origin' };
+      }
+      return { term: 'angeheiratet', sentence: `${fullName(X)} ist ${G(X.sex, 'Partner', 'Partnerin', 'Partner/in')} von ${fullName(Z)}.`, kind: 'origin' };
+    }
     if (Q && X.role === 'relative' && !swap) {
       const kq = kinship(Q.id, X.id);
       if (kq && kq.kind !== 'none') {
@@ -627,6 +643,14 @@ let treeZoom = LS.get('stb.zoom', matchMedia('(max-width: 720px)').matches ? 0.8
 // Baumdarstellung über „Einheiten“: Person + Partner + Kinder-Einheiten
 function unitOf(p) { return { main: p, partners: S.partners.get(p.id) || [], kids: (S.kids.get(p.id) || []).map(unitOf) }; }
 const leafUnit = (p) => ({ main: p, partners: [], kids: [] });
+// Person der Herkunftsfamilie mit eigenen Partnern und Kindern (nur weitere Angehörige)
+function originUnit(p, depth = 0) {
+  if (!p || p.kind !== 'origin' || depth > 6) return leafUnit(p);
+  const mates = p.role === 'parent' ? [] : originMates(p);
+  const kids = p.role === 'parent' ? [] : (S.origins.get(p.originOf) || []).filter(o => o.role === 'relative' && (o.parentIds || []).includes(p.id));
+  const uniq = [...new Map(kids.map(k => [k.id, k])).values()].sort((a, b) => sortKey(birthOrBaptism(a)) - sortKey(birthOrBaptism(b)));
+  return { main: p, partners: mates, kids: uniq.map(k => originUnit(k, depth + 1)) };
+}
 
 // Stämme = Herkunftsfamilien angeheirateter Partner
 function stemList() {
@@ -644,8 +668,8 @@ function stemUnit(partnerId) {
   const parents = originParents(P.id);
   const sibs = (S.origins.get(P.id) || []).filter(o => o.role === 'sibling');
   const joint = spouse ? (S.kids.get(spouse.id) || []).filter(k => k.otherParentId === P.id).map(unitOf) : [];
-  const pUnit = { main: P, partners: spouse ? [spouse] : [], kids: [...joint, ...originKids(P.id).map(leafUnit)] };
-  const kids = [pUnit, ...sibs.map(leafUnit)].sort((x, y) => sortKey(x.main.birth) - sortKey(y.main.birth));
+  const pUnit = { main: P, partners: spouse ? [spouse] : [], kids: [...joint, ...originKids(P.id).map(o => originUnit(o))] };
+  const kids = [pUnit, ...sibs.map(o => originUnit(o))].sort((x, y) => sortKey(x.main.birth) - sortKey(y.main.birth));
   if (!parents.length) return { placeholder: `Eltern von ${callName(P)}`, id: 'ph-' + P.id, partners: [], kids };
   const extra = (S.origins.get(P.id) || []).filter(o => o.role === 'partnerOfParent');
   // Linie mit weiteren Vorfahren zuerst, damit sie nach oben fortgesetzt werden kann
@@ -658,7 +682,7 @@ function stemUnit(partnerId) {
     const sibs = siblingsOf(person).filter(x => !seen.has(x.id));
     if (!up.length && !sibs.length) break;
     sibs.forEach(x => seen.add(x.id));
-    const kidsUp = [cur, ...sibs.map(leafUnit)].sort((x, y) => sortKey((x.main || {}).birth) - sortKey((y.main || {}).birth));
+    const kidsUp = [cur, ...sibs.map(o => o.kind === 'origin' ? originUnit(o) : leafUnit(o))].sort((x, y) => sortKey((x.main || {}).birth) - sortKey((y.main || {}).birth));
     if (!up.length) { cur = { placeholder: `Eltern von ${callName(person)}`, id: 'ph-' + person.id, partners: [], kids: kidsUp }; break; }
     const upOrd = [...up].sort((a, b) => (parentsOf(b).length ? 1 : 0) - (parentsOf(a).length ? 1 : 0));
     cur = { main: upOrd[0], partners: upOrd.slice(1), kids: kidsUp };
@@ -858,7 +882,7 @@ function personHtml(p, compact) {
   const pediTxt = { adopted: G(p.sex, 'Adoptivsohn', 'Adoptivtochter', 'Adoptivkind'), foster: 'Pflegekind' }[p.pedi] || '';
   const ageTxt = !p.death && age !== null && isLiving(p) ? ` · ${/^(ca\.|vor|nach|zw\.)/.test(p.birth || '') ? 'etwa ' : ''}${age} Jahre` : (p.death && parseFull(p.death) && parseFull(p.birth) ? ` · ${parseFull(p.death).y - parseFull(p.birth).y - ((parseFull(p.death).m * 100 + parseFull(p.death).d) < (parseFull(p.birth).m * 100 + parseFull(p.birth).d) ? 1 : 0)} Jahre alt geworden` : '');
   const address = [p.street, [p.zip, p.city].filter(Boolean).join(' ')].filter(Boolean).join(', ');
-  const marriages = p.kind === 'partner' ? [[S.byId.get(p.partnerOf), p]] : partners.map(s => [s, s]);
+  const marriages = p.kind === 'partner' || (p.kind === 'origin' && p.role === 'relative' && p.partnerOfId) ? [[S.byId.get(p.partnerOf || p.partnerOfId), p]] : partners.map(s => [s, s]);
   const gen = S.gen.get(p.id);
   const parentNote = p.kind === 'partner' ? `<div class="hint">Eingeheiratet – Eltern und Geschwister von ${esc(callName(p) || 'ihr/ihm')} sind noch nicht erfasst. Oben über „+ Elternteil“ ergänzen.</div>` : '';
   const kindLabel = p.kind === 'partner' ? 'Partner/in' : p.kind === 'origin' ? 'Herkunftsfamilie von ' + esc(fullName(S.byId.get(p.originOf))) : 'Familie';
@@ -885,6 +909,8 @@ function personHtml(p, compact) {
       ${p.kind === 'origin' && ['parent', 'partnerOfParent', 'relative'].includes(p.role) && parentsOf(p).length < 2 ? '<button class="btn" data-pa="origin-up">+ Elternteil</button>' : ''}
       ${p.kind === 'origin' && ['parent', 'partnerOfParent', 'relative'].includes(p.role) ? '<button class="btn" data-pa="origin-sib">+ Geschwister</button>' : ''}
       ${p.kind === 'origin' && p.role === 'sibling' ? '<button class="btn" data-pa="origin-sib2">+ Geschwister</button>' : ''}
+      ${p.kind === 'origin' && p.role !== 'parent' && p.role !== 'partnerOfParent' && !(p.role === 'relative' && p.partnerOfId) ? '<button class="btn" data-pa="origin-mate">+ Partner/in</button>' : ''}
+      ${p.kind === 'origin' && p.role !== 'parent' ? '<button class="btn" data-pa="origin-kid2">+ Kind</button>' : ''}
       ${p.kind === 'origin' && p.role === 'partnerOfParent' && isAdmin() && originParents(p.originOf).length < 2 ? `<button class="btn" data-pa="make-parent">Ist ${G(p.sex, 'Vater', 'Mutter', 'Elternteil')} von ${esc(callName(S.byId.get(p.originOf)))}</button>` : ''}
       ${p.kind === 'blood' ? '<button class="btn" data-pa="partner">+ Partner/in</button>' : ''}
       ${p.kind === 'blood' && (!S.byId.has(p.parentId) || !S.byId.has(p.otherParentId)) ? '<button class="btn" data-pa="parent">+ Elternteil</button>' : ''}
@@ -938,6 +964,8 @@ function bindPersonActions(root, p) {
     if (a === 'origin-up') openPersonForm({ mode: 'origin', anchor: p, role: 'relative', relation: 'parent' });
     if (a === 'origin-sib') openPersonForm({ mode: 'origin', anchor: p, role: 'relative', relation: 'sibling' });
     if (a === 'origin-sib2') openPersonForm({ mode: 'origin', anchor: S.byId.get(p.originOf), role: 'sibling' });
+    if (a === 'origin-mate') openPersonForm({ mode: 'origin', anchor: p, role: 'relative', relation: 'partner' });
+    if (a === 'origin-kid2') openPersonForm({ mode: 'origin', anchor: p, role: 'relative', relation: 'child' });
     if (a === 'source') openSourceForm({ person: p });
     if (a === 'make-parent') makeOriginParent(p);
   }));
@@ -1010,15 +1038,20 @@ function openPersonForm({ mode, person, anchor, role, relation }) {
   if (mode === 'origin' && role === 'sibling') p.birthName = anchor.kind === 'origin' ? '' : anchor.birthName || '';
   if (mode === 'origin' && role === 'sibling' && anchor.kind === 'origin') p.lastName = anchor.lastName || '';
   if (mode === 'origin' && role === 'child') p.lastName = anchor.lastName || '';
-  if (mode === 'origin' && role === 'relative') { p.lastName = relation === 'parent' ? (anchor.birthName || anchor.lastName || '') : ''; p.birthName = relation === 'sibling' ? (anchor.birthName || '') : ''; }
-  const isPartner = p.kind === 'partner';
+  if (mode === 'origin' && role === 'relative') {
+    p.lastName = relation === 'parent' ? (anchor.birthName || anchor.lastName || '') : relation === 'child' ? (anchor.sex === 'w' && partnersOf(anchor)[0] ? partnersOf(anchor)[0].lastName : anchor.lastName) || '' : relation === 'partner' && anchor.sex === 'm' ? anchor.lastName || '' : '';
+    p.birthName = relation === 'sibling' ? (anchor.birthName || '') : '';
+    if (relation === 'partner') p.kind = 'origin';
+  }
+  const isPartner = p.kind === 'partner' || (mode === 'origin' && role === 'relative' && relation === 'partner') || (p.kind === 'origin' && p.role === 'relative' && !!p.partnerOfId);
   const bloodAnchor = mode === 'child' && anchor ? (anchor.kind === 'partner' ? S.byId.get(anchor.partnerOf) : anchor) : null;
-  const coParents = mode === 'child' && anchor && anchor.kind === 'blood' ? (S.partners.get(anchor.id) || []) : [];
+  const coParents = mode === 'child' && anchor && anchor.kind === 'blood' ? (S.partners.get(anchor.id) || [])
+    : mode === 'origin' && role === 'relative' && relation === 'child' ? partnersOf(anchor) : [];
   const title = mode === 'edit' ? (admin ? `${fullName(p)} bearbeiten` : `Änderung zu ${fullName(p)} vorschlagen`)
     : mode === 'child' ? `Kind von ${fullName(anchor)} ${admin ? 'hinzufügen' : 'vorschlagen'}`
     : mode === 'root' ? 'Stammvater/-mutter anlegen'
     : mode === 'parent' ? `${upParent ? 'Zweites Elternteil' : 'Elternteil'} von ${fullName(anchor)} ${admin ? 'hinzufügen' : 'vorschlagen'}`
-    : mode === 'origin' && role === 'relative' ? `${relation === 'parent' ? 'Elternteil' : 'Geschwister'} von ${fullName(anchor)} ${admin ? 'hinzufügen' : 'vorschlagen'}`
+    : mode === 'origin' && role === 'relative' ? `${({ parent: 'Elternteil', sibling: 'Geschwister', partner: 'Partner/in', child: 'Kind' })[relation]} von ${fullName(anchor)} ${admin ? 'hinzufügen' : 'vorschlagen'}`
     : mode === 'origin' && anchor.kind === 'origin' ? `${role === 'partnerOfParent' ? 'Partner/in' : 'Kind'} von ${fullName(anchor)} ${admin ? 'hinzufügen' : 'vorschlagen'}`
     : mode === 'origin' ? `${role === 'child' ? 'Kind' : ROLE_TXT[role] || 'Elternteil'} von ${fullName(anchor)}${role === 'child' ? ' aus anderer Beziehung' : ''} ${admin ? 'hinzufügen' : 'vorschlagen'}`
     : `Partner/in von ${fullName(anchor)} ${admin ? 'hinzufügen' : 'vorschlagen'}`;
