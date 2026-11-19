@@ -372,3 +372,33 @@ test('Herkunftsfamilie: Partner/in und Kinder für Geschwister und weitere Angeh
   assert.ok(fam, 'Familie Onkel/Tante fehlt im GEDCOM');
   void opa; void schwaegerin;
 });
+
+test('GEDCOM: Partner und Kinder von Onkeln/Tanten der Herkunftsfamilie werden zugeordnet', async () => {
+  const T = await startServer();
+  const d = (await T.req('GET', '/api/data')).data;
+  const peter = d.persons.find(p => p.firstName === 'Peter'), sab = d.persons.find(p => p.firstName === 'Sabine');
+  const mk = async (body) => (await T.req('POST', '/api/personen', body)).data.person;
+  const hans = await mk({ kind: 'origin', role: 'parent', anchorId: sab.id, fields: { firstName: 'Hans', lastName: 'Wolff', sex: 'm' } });
+  const opa = await mk({ kind: 'origin', role: 'relative', relation: 'parent', anchorId: hans.id, fields: { firstName: 'Opa', lastName: 'Wolff', sex: 'm' } });
+  const josef = await mk({ kind: 'origin', role: 'relative', relation: 'sibling', anchorId: hans.id, fields: { firstName: 'Josef', lastName: 'Wolff', sex: 'm' } });
+  const ged = ['0 HEAD', '1 CHAR UTF-8',
+    `0 @I1@ INDI`, '1 NAME Peter /Muster/', `1 _STB_ID ${peter.id}`, '1 FAMS @F1@',
+    `0 @I2@ INDI`, '1 NAME Sabine /Wolff/', `1 _STB_ID ${sab.id}`, '1 FAMS @F1@', '1 FAMC @F2@',
+    `0 @I3@ INDI`, '1 NAME Hans /Wolff/', `1 _STB_ID ${hans.id}`, '1 FAMS @F2@', '1 FAMC @F3@',
+    `0 @I4@ INDI`, '1 NAME Opa /Wolff/', `1 _STB_ID ${opa.id}`, '1 FAMS @F3@',
+    `0 @I5@ INDI`, '1 NAME Josef /Wolff/', `1 _STB_ID ${josef.id}`, '1 FAMC @F3@', '1 FAMS @F4@',
+    '0 @I6@ INDI', '1 NAME Maria /Huber/', '1 SEX F', '1 FAMS @F4@',
+    '0 @I7@ INDI', '1 NAME Petra /Wolff/', '1 SEX F', '1 FAMC @F4@',
+    '0 @F1@ FAM', '1 HUSB @I1@', '1 WIFE @I2@',
+    '0 @F2@ FAM', '1 HUSB @I3@', '1 CHIL @I2@',
+    '0 @F3@ FAM', '1 HUSB @I4@', '1 CHIL @I3@', '1 CHIL @I5@',
+    '0 @F4@ FAM', '1 HUSB @I5@', '1 WIFE @I6@', '1 MARR', '2 DATE 1950', '1 CHIL @I7@', '0 TRLR'].join('\n');
+  const plan = (await T.req('POST', '/api/gedcom/vorschau', { text: ged })).data;
+  assert.equal((plan.unreachable || []).length, 0, JSON.stringify(plan.unreachable));
+  const res = await T.req('POST', '/api/gedcom/uebernehmen', { token: plan.token, adds: plan.adds.map(a => a.key), updates: [] });
+  assert.equal(res.status, 200); assert.deepEqual(res.data.errors, []);
+  const d2 = (await T.req('GET', '/api/data')).data;
+  const maria = d2.persons.find(p => p.firstName === 'Maria'), petra = d2.persons.find(p => p.firstName === 'Petra');
+  assert.equal(maria.partnerOfId, josef.id); assert.equal(maria.marriage, '1950');
+  assert.deepEqual(petra.parentIds, [josef.id, maria.id]);
+});
