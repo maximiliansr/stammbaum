@@ -600,3 +600,6 @@ u.ruf { text-decoration: underline; text-decoration-thickness: 1.5px; text-under
 .img-tools { display: flex; justify-content: center; margin-top: 8px; }
 
 [hidden] { display: none !important; }
+
+.ged-quiet { margin-top: 12px; }
+.ged-quiet > summary { cursor: pointer; color: var(--ink-3); font-size: 13px; padding: 6px 0; }

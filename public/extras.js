@@ -510,14 +510,18 @@ async function gedPreview(extra = {}) {
 function renderGedPlan() {
   const P = GED.plan, host = $('#gedPlan'); if (!host || !P) return;
   const fmtD = (k, v) => (k === 'sex' ? ({ m: 'männlich', w: 'weiblich' })[v] || v : v);
-  const matchRows = P.matches.map(m => {
+  // Unveränderte, sicher erkannte Personen ausblenden (aufklappbar)
+  const quiet = (m) => !Object.keys(m.diffs).length && m.score >= 8 && !GED.overrides[m.gedId];
+  const shown = P.matches.filter(m => !quiet(m)), hidden = P.matches.filter(quiet);
+  const matchRow = (m) => {
     const p = S.byId.get(m.personId);
     const diffs = Object.entries(m.diffs);
     return `<div class="ged-m" data-g="${esc(m.gedId)}">
       <div class="ged-head"><span><b>${esc(m.gedName)}</b> ${m.gedBirth ? `<span class="muted">* ${esc(m.gedBirth)}</span>` : ''} → ${p ? `<a href="#/p/${esc(p.id)}" target="_blank">${esc(fullName(p))}</a> <span class="muted">${esc(lifespan(p))}</span>` : '?'}</span>
         <select class="input sm ged-ov" aria-label="Zuordnung ändern"><option value="">Zuordnung behalten</option>${m.alternatives.map(a2 => `<option value="${esc(a2.personId)}">stattdessen: ${esc(fullName(S.byId.get(a2.personId)))} ${esc(lifespan(S.byId.get(a2.personId)))}</option>`).join('')}<option value="__neu">keine – als neue Person behandeln</option></select></div>
       ${diffs.length ? `<table class="diff">${diffs.map(([k, d]) => `<tr><td><label class="check"><input type="checkbox" data-uk="${esc(k)}"${d.fill ? ' checked' : ''}> ${esc(FIELD_LABELS[k] || k)}</label></td><td>${d.ours ? `<del>${esc(fmtD(k, d.ours))}</del> ` : ''}<ins>${esc(fmtD(k, d.theirs))}</ins>${d.fill ? '' : ' <span class="pill warn">abweichend</span>'}</td></tr>`).join('')}</table>` : '<div class="hint">Keine neuen Angaben.</div>'}</div>`;
-  }).join('');
+  };
+  const matchRows = shown.map(matchRow).join('') + (hidden.length ? `<details class="ged-quiet"><summary>${hidden.length} unveränderte Personen (sicher erkannt, keine neuen Angaben)</summary>${hidden.map(matchRow).join('')}</details>` : '');
   const addRows = P.adds.map(a => `<label class="ged-a check" data-k="${esc(a.key)}" data-dep="${esc((a.dependsOn || []).join(','))}"><input type="checkbox" checked>
     <span><b>${esc(a.name || '(ohne Namen)')}</b> <span class="muted">${esc([a.birth && '* ' + a.birth, a.death && '† ' + a.death].filter(Boolean).join(' '))}</span><br><small>${esc(a.relText || '')}</small></span></label>`).join('');
   const un = P.unattached.map(u => `<li>${esc(u.name)} ${u.birth ? `<span class="muted">* ${esc(u.birth)}</span>` : ''}
@@ -528,7 +532,7 @@ function renderGedPlan() {
       <div class="stats"><div class="stat"><b>${P.total}</b><span>Personen in der Datei</span></div><div class="stat"><b>${P.matches.length}</b><span>erkannt</span></div><div class="stat"><b>${P.adds.length}</b><span>neu</span></div><div class="stat"><b>${P.unattached.length}</b><span>nicht zuordenbar</span></div></div>
       ${P.notes.length ? `<ul class="hint">${P.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}
       <div class="btn-row" style="margin-top:12px"><button class="btn primary" id="gedApply">Ausgewählte übernehmen</button><button class="btn" id="gedCancel">Verwerfen</button><span class="hint" id="gedCount"></span></div></div>
-    ${P.matches.length ? `<div class="card"><h2>Erkannte Personen (${P.matches.length})</h2><p class="hint" style="margin-top:0">Fehlende Angaben sind vorausgewählt, abweichende nicht. ${nUpd} Ergänzungen vorgeschlagen.</p>${matchRows}</div>` : ''}
+    ${P.matches.length ? `<div class="card"><h2>Erkannte Personen (${P.matches.length})</h2><p class="hint" style="margin-top:0">Fehlende Angaben sind vorausgewählt, abweichende nicht. ${nUpd} Ergänzungen vorgeschlagen.${hidden.length ? ` ${hidden.length} unveränderte sind ausgeblendet.` : ''}</p>${shown.length ? '' : '<div class="hint">Keine Änderungen bei erkannten Personen.</div>'}${matchRows}</div>` : ''}
     ${P.adds.length ? `<div class="card"><h2>Neu hinzufügen (${P.adds.length})</h2><div class="btn-row" style="margin-bottom:8px"><button class="btn sm" data-all="1">alle</button><button class="btn sm" data-all="0">keine</button></div><div class="ged-adds">${addRows}</div></div>` : ''}
     ${P.unattached.length ? `<div class="card"><h2>Nicht zuordenbar (${P.unattached.length})</h2><p class="hint" style="margin-top:0">Diese Personen haben keine Verbindung zu erkannten Personen. Eine davon kann eine neue Stammlinie beginnen, oder sie lässt sich von Hand einer Person zuordnen.</p><ul class="ged-un">${un}</ul></div>` : ''}`;
   const count = () => { $('#gedCount').textContent = `${$$('.ged-a input:checked', host).length} neue Personen, ${$$('[data-uk]:checked', host).length} Ergänzungen`; };
